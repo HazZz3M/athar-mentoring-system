@@ -70,7 +70,35 @@ table.t th{background:#f0f5f6;font-weight:700;color:#33474d;position:sticky;top:
 .hist{font-size:12.5px;background:#fafcfc;border:1px dashed var(--line);border-radius:8px;padding:6px 8px;margin:6px 0}
 .req::after{content:" *";color:var(--bad)}
 iframe.plan{width:100%;height:72vh;border:1px solid var(--line);border-radius:var(--r);background:#fff}
-@media (max-width:640px){.wrap{padding:8px}.card{padding:10px}.top .brand span.t{display:none}.foot{flex-wrap:wrap}}
+/* records, roadmap list, error jump */
+.rec{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0;display:flex;gap:10px;align-items:flex-start}
+.rec.on{border-color:var(--pri);background:#f6fbfb}.rec .ck{flex:none;display:grid;place-items:center;width:34px;height:34px;margin-top:2px}.rec .ck input{width:22px;height:22px}
+.rec .own{font-size:16.5px;font-weight:700;color:var(--pri)}.rec .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.recbar{position:sticky;bottom:0;background:#fffffff2;border-top:1px solid var(--line);padding:8px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;z-index:15}
+.rmfil{display:flex;gap:4px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:thin}.rmfil .chip{flex:none;white-space:nowrap}
+.rmdom{font-weight:700;color:var(--pri);background:var(--pri-l);border-radius:8px;padding:6px 10px;margin:10px 0 4px;display:flex;justify-content:space-between}
+.rmrow{border:1px solid var(--line);border-radius:10px;background:#fff;margin:6px 0;display:flex;gap:8px;align-items:center;padding:8px 10px}
+.rmrow .rmmain{flex:1;cursor:pointer;min-width:0}.rmrow .txt{font-weight:600;margin-top:2px}.rmrow .more{display:none;font-size:13px;margin-top:4px}.rmrow.open .more{display:block}
+.rmrow.sug{border-color:var(--acc);background:#fffdf7}.rmrow .btn{flex:none}
+.errmark{outline:2px solid var(--bad)!important;outline-offset:2px;border-radius:8px}
+.errhl{animation:errfl 1.2s ease 2}@keyframes errfl{0%,100%{box-shadow:0 0 0 0 #b4413a00}50%{box-shadow:0 0 0 6px #b4413a55}}
+.errlist li{cursor:pointer;text-decoration:underline dotted;margin:3px 0}
+@media (max-width:640px){
+  body{font-size:15px}.wrap{padding:8px 8px 24px}.card{padding:10px;margin:8px 0}h2{font-size:17px}
+  .top{flex-wrap:nowrap;overflow-x:auto;padding:6px 8px;gap:6px;scrollbar-width:none}.top::-webkit-scrollbar{display:none}
+  .top .brand span.t{display:none}.top .sp{flex:1 0 4px}.navb{white-space:nowrap;flex:none;padding:7px 11px}#whoami{white-space:nowrap;flex:none}
+  input[type=text],input[type=date],input[type=number],input[type=url],select,textarea{font-size:16px;padding:10px}
+  .chip{padding:7px 13px;font-size:14.5px;margin:4px 3px}.btn{min-height:42px;padding:9px 14px}.btn.sm{min-height:38px;padding:6px 12px;font-size:14px}.btn.ghost{min-height:36px}
+  .slot{min-width:62px;padding:6px}.sh .n{width:26px;height:26px}.sh h3{font-size:16px}
+  .savebar,.recbar{padding:8px;gap:6px}.savebar .btn,.recbar .btn{flex:1 1 auto}.savebar #saveState,.recbar .cnt{order:5;flex-basis:100%;text-align:center}
+  .pgrid{grid-template-columns:1fr}.row>h2.grow{flex-basis:100%}
+  .foot{flex-wrap:wrap}.tbl{border:0;overflow:visible}
+  table.resp,table.resp tbody,table.resp tr,table.resp td{display:block;width:100%!important}table.resp tr:first-child{display:none}
+  table.resp tr{border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:8px}table.resp td{border:0;padding:3px 0}
+  table.resp td[data-l]::before{content:attr(data-l) ": ";color:var(--mut);font-size:12.5px}
+  .modal{padding:0;place-items:stretch}.modal>.card{max-height:100vh;height:100%;border-radius:0;margin:0}
+  iframe.plan{height:75vh!important}
+}
 @media print{.top,.foot,.noprint{display:none!important}}
 </style>
 </head>
@@ -79,7 +107,8 @@ iframe.plan{width:100%;height:72vh;border:1px solid var(--line);border-radius:va
   <div class="brand"><div class="logo">أثر</div><span class="t">نظام المنتورينج ومتابعة الأداء</span></div>
   <button class="navb adv" data-act="nav" data-v="projects" id="nav-projects">المشروعات</button>
   <button class="navb adv" data-act="nav" data-v="dashboard" id="nav-dashboard">لوحة المؤشرات</button>
-  <button class="navb smp" data-act="home">مشروعاتي</button>
+  <button class="navb smp" data-act="home" id="nav-home">مشروعاتي</button>
+  <button class="navb" data-act="records" id="nav-records">السجلات</button>
   <div class="sp"></div>
   <span class="smp sm" id="whoami"></span>
   <label class="sm adv">المنتور:</label><select id="mentorSel" data-act="mentor" class="adv"></select>
@@ -168,14 +197,16 @@ function init(){
     S.needPick=!!(window.ATHAR_API&&!me);go('projects');});
 }
 function go(v){if(S.view==='session'&&v!=='session'&&S.dirty){saveDraft(true);}S.view=v;['projects','dashboard'].forEach(function(n){document.getElementById('nav-'+n).classList.toggle('on',n===v||(n==='projects'&&(v==='journey'||v==='session'||v==='plan')))});
-  if(v==='projects')loadProjects();else if(v==='dashboard')loadDash();else render();window.scrollTo(0,0);}
+  if(v==='projects')loadProjects();else if(v==='dashboard')loadDash();else if(v==='records')loadRecords();else render();window.scrollTo(0,0);}
 function render(){var a=document.getElementById('app'),f=document.getElementById('foot');f.innerHTML='';
   document.body.classList.toggle('simple',S.mode==='simple');var mb=document.getElementById('modeBtn');if(mb)mb.textContent=S.mode==='simple'?'وضع متقدم':'الوضع البسيط';
   var who=document.getElementById('whoami');if(who){var me=S.boot&&S.mentorId?S.boot.mentors.filter(function(m){return m.MentorID===S.mentorId})[0]:null;who.innerHTML=me?'👤 '+esc(me.MentorName)+' <a href="#" data-act="changeMentor" style="color:#fff">(تغيير)</a>':'';}
-  if(S.view==='home'){a.innerHTML=vHome();return;}if(S.view==='ss'){a.innerHTML=vSS();f.innerHTML=vSSBar();return;}
+  var nr=document.getElementById('nav-records');if(nr)nr.classList.toggle('on',S.view==='records');var nh=document.getElementById('nav-home');if(nh)nh.classList.toggle('on',S.view==='home');
+  if(S.view==='records'){a.innerHTML=vRecords();f.innerHTML=vRecBar();return;}
+  if(S.view==='home'){a.innerHTML=vHome();return;}if(S.view==='ss'){if(S.ssErr&&S.ssLocal){S.ssErr=ssChecks();if(!S.ssErr.length)S.ssErr=null;}a.innerHTML=vSS();f.innerHTML=vSSBar();markErrs();return;}
   if(S.view==='projects')a.innerHTML=vProjects();else if(S.view==='journey')a.innerHTML=vJourney();else if(S.view==='session'){a.innerHTML=vSession();f.innerHTML=vFoot();}
   else if(S.view==='plan')a.innerHTML=vPlan();else if(S.view==='dashboard')a.innerHTML=vDash();
-  if(S.view==='plan'&&S.plan){var fr=document.getElementById('planFrame');if(fr)fr.srcdoc=(S.mode==='simple'||S.plan.mode==='a4')&&S.plan.a4?S.plan.a4:S.plan.html;}}
+  if(S.view==='plan'&&S.plan){var fr=document.getElementById('planFrame');if(fr)fr.srcdoc=(S.mode==='simple'||S.plan.mode==='a4'||S.plan.fromRecords)&&S.plan.a4?S.plan.a4:S.plan.html;}}
 
 /* ============================================================ projects */
 function loadProjects(){run(call('listProjects',{includeTest:S.includeTest}),'تحميل المشروعات…').then(function(p){S.projects=p;render();if(S.needPick){S.needPick=false;pickMentorModal();}});}
@@ -409,13 +440,13 @@ function vChecklist(){var c=S.ctx,d=S.d,items=c.checklistItems,prev=c.previousCh
   var h='<div class="card" id="checklist"><div class="row"><h3 class="grow" style="margin:0">📋 تشيك ليست الروتينات <span class="sm mut">(مكتبة أسيوط — كل جلسة)</span></h3><span class="tag '+(filled===items.length?'ok':'warn')+'">'+filled+'/'+items.length+'</span></div>'+
     '<div class="tiles">'+tile(sc.pct===null?'—':sc.pct+'%','الدرجة دلوقتي',sc.pct===null?'':sc.pct>=70?'ok':sc.pct>=40?'warn':'bad')+(last?tile(last.pct===null?'—':last.pct+'%','الجلسة السابقة ('+last.SessionNo+')'):'')+(first&&first!==last?tile(first.pct===null?'—':first.pct+'%','أول جلسة ('+first.SessionNo+')'):'')+'</div>'+
     '<div class="sm mut">الدرجة: بيعملها 2، ساعات 1، لأ 0، و«مش بيخصه» ما بتدخلش في الحساب. اسأل واطلب تشوف الدليل — متعتمدش على الكلام بس.</div>'+
-    '<label class="f req">نوع المشروع</label><div>'+(S.boot.constants.modes||[]).map(function(m){return '<span class="chip'+(d.projectMode===m?' on':'')+'" data-act="setMode" data-v="'+esc(m)+'">'+esc(m)+'</span>'}).join('')+' <span class="sm mut">البنود اللي مش لنوع المشروع بتتعلم «مش بيخصه» لوحدها.</span></div>'+
+    '<label class="f req">نوع المشروع</label><div id="cl_mode">'+(S.boot.constants.modes||[]).map(function(m){return '<span class="chip'+(d.projectMode===m?' on':'')+'" data-act="setMode" data-v="'+esc(m)+'">'+esc(m)+'</span>'}).join('')+' <span class="sm mut">البنود اللي مش لنوع المشروع بتتعلم «مش بيخصه» لوحدها.</span></div>'+
     (Object.keys(prev).length?'<div class="row" style="margin-top:6px"><button class="btn sm sec" data-act="clCopy">انسخ تقييم الجلسة السابقة في الخانات الفاضية</button></div>':'');
   var doms=[];items.forEach(function(it){if(doms.indexOf(it.Domain)<0)doms.push(it.Domain)});
-  doms.forEach(function(dm){h+='<h4>'+esc(dm)+'</h4><div class="tbl"><table class="t"><tr><th style="width:34%">الروتين</th><th>المنتور يطلب يشوف</th><th style="width:70px">السابق</th><th style="width:300px">النهارده</th><th style="width:170px">ملاحظة/دليل</th></tr>'+
+  doms.forEach(function(dm){h+='<h4>'+esc(dm)+'</h4><div class="tbl"><table class="t resp"><tr><th style="width:34%">الروتين</th><th>المنتور يطلب يشوف</th><th style="width:70px">السابق</th><th style="width:300px">النهارده</th><th style="width:170px">ملاحظة/دليل</th></tr>'+
     items.filter(function(it){return it.Domain===dm}).map(function(it){var P='checklist|'+it.ItemID+'|',cur=(d.checklist[it.ItemID]||{});var na=!appliesMode(it.AppliesTo,d.projectMode);
-      return '<tr'+(cur.Value?'':' style="background:#fff8e6"')+'><td><b>'+esc(it.RoutineText)+'</b><div class="sm mut">'+esc(it.FrequencyText)+(it.AppliesTo&&it.AppliesTo!=='كل المشاريع'?' · '+esc(it.AppliesTo):'')+'</div></td><td class="sm">'+esc(it.EvidenceToAsk)+'</td><td>'+clTag((prev[it.ItemID]||{}).Value)+'</td><td>'+
-        (na?'<span class="tag gray">مش بيخصه</span> <span class="sm mut">(مش لنوع المشروع)</span>':chips(P+'Value',S.boot.constants.checklistValues||[],function(o){return {'بيعملها':'ok','ساعات':'warn','لأ':'bad'}[o]||''}))+'</td><td>'+inp(P+'Note','text','','style="font-size:12px"')+'</td></tr>'}).join('')+'</table></div>'});
+      return '<tr id="cl_'+esc(it.ItemID)+'"'+(cur.Value?'':' style="background:#fff8e6"')+'><td><b>'+esc(it.RoutineText)+'</b><div class="sm mut">'+esc(it.FrequencyText)+(it.AppliesTo&&it.AppliesTo!=='كل المشاريع'?' · '+esc(it.AppliesTo):'')+'</div></td><td class="sm" data-l="اطلب تشوف">'+esc(it.EvidenceToAsk)+'</td><td'+((prev[it.ItemID]||{}).Value?' data-l="الجلسة اللي فاتت"':'')+'>'+clTag((prev[it.ItemID]||{}).Value)+'</td><td>'+
+        (na?'<span class="tag gray">مش بيخصه</span> <span class="sm mut">(مش لنوع المشروع)</span>':chips(P+'Value',S.boot.constants.checklistValues||[],function(o){return {'بيعملها':'ok','ساعات':'warn','لأ':'bad'}[o]||''}))+'</td><td>'+inp(P+'Note','text','ملاحظة أو الدليل (اختياري)','style="font-size:13px"')+'</td></tr>'}).join('')+'</table></div>'});
   return h+'</div>';}
 
 /* ---- step 4: diagnosis */
@@ -492,21 +523,25 @@ function vRoadmapPicker(active,added){var d=S.d,L=S.L,f=S.rmf||(S.rmf={freq:'',d
   var ok=function(id){var t=L.roadmap[id];return t&&!active[id]&&!added[id]&&appliesMode(t.AppliesTo,mode)};
   var sug=[],why={};S.ctx.checklistItems.forEach(function(it){var v=(d.checklist[it.ItemID]||{}).Value;if(v!=='لأ'&&v!=='ساعات')return;
     ids(it.RoadmapIDs).forEach(function(id){if(ok(id)&&sug.indexOf(id)<0){sug.push(id);why[id]='«'+it.RoutineText+'» = '+v}})});
-  var h='<div class="card"><h3>🗺 مكتبة خريطة الطريق — أسيوط ('+L.roadmapList.length+' مهمة)</h3><div class="sm mut">اختار مع صاحب المشروع روتين أو اتنين بس، والأولوية لروتينات الفلوس. كل مهمة بتتابع كروتين (يومي/أسبوعي/كل أسبوعين/شهري) ولازم تكتب «إمتى وفين».</div>';
-  var more=S.openCards.rmMore,shown=more?sug:sug.slice(0,6);
-  h+=sug.length?'<h4>مقترحة من تشيك ليست النهارده ('+sug.length+')</h4><div class="grid g2">'+shown.map(function(id){return rmCard(id,why[id])}).join('')+'</div>'+(sug.length>6?'<button class="btn sm ghost" data-act="toggle" data-v="rmMore">'+(more?'عرض أول 6 بس':'عرض باقي الاقتراحات ('+(sug.length-6)+')')+'</button>':''):'<div class="sm mut" style="margin:6px 0">'+(Object.keys(d.checklist).length?'مفيش اقتراحات: قيّم التشيك ليست في خطوة 3 أو كل البنود المرتبطة متسندة بالفعل.':'قيّم التشيك ليست في خطوة 3 عشان تظهر الاقتراحات.')+'</div>';
-  var key='allRM',open=S.openCards[key];
-  h+='<div class="acc '+(open?'open':'')+'"><div class="hd" data-act="toggle" data-v="'+key+'"><span class="caret">◀</span><b>كل مكتبة خريطة الطريق</b></div>';
-  if(open){var doms=[];L.roadmapList.forEach(function(t){if(doms.indexOf(t.Domain)<0)doms.push(t.Domain)});var q=normAr(f.q);
-    var list=L.roadmapList.filter(function(t){return ok(t.RoadmapID)&&(!f.freq||t.FrequencyCode===f.freq)&&(!f.dom||t.Domain===f.dom)&&(!q||normAr(t.TaskText+' '+t.Code+' '+t.ExpectedResult).indexOf(q)>=0)});
-    h+='<div class="bd"><div class="grid g3"><div><label class="f">التكرار</label><select data-act="rmf" data-k="freq"><option value="">الكل</option>'+[['DAILY','يومي'],['WEEKLY','أسبوعي'],['BIWEEKLY','كل أسبوعين'],['MONTHLY','شهري']].map(function(x){return '<option value="'+x[0]+'"'+(f.freq===x[0]?' selected':'')+'>'+x[1]+'</option>'}).join('')+'</select></div>'+
-      '<div><label class="f">المجال</label><select data-act="rmf" data-k="dom"><option value="">الكل</option>'+doms.map(function(x){return '<option'+(f.dom===x?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select></div>'+
-      '<div><label class="f">بحث</label><input type="text" id="rmq" data-act="rmq" value="'+esc(f.q)+'" placeholder="كلمة أو كود"></div></div><div class="sm mut">'+list.length+' مهمة'+(mode?' مناسبة لمشروع «'+esc(mode)+'»':'')+'</div><div class="grid g2">'+list.slice(0,60).map(function(t){return rmCard(t.RoadmapID)}).join('')+'</div>'+(list.length>60?'<div class="sm mut">ضيّق البحث لعرض الباقي.</div>':'')+'</div>';}
-  return h+'</div></div>';}
-function rmCard(id,why){var t=S.L.roadmap[id];if(!t)return '';
-  return '<div class="card" style="margin:0"><div><span class="tag">'+esc(t.Code)+'</span> <span class="tag gray">'+esc(t.FrequencyText)+'</span></div><div class="b" style="margin:4px 0">'+esc(t.TaskText)+'</div>'+
-    '<div class="sm"><b>النتيجة:</b> '+esc(t.ExpectedResult)+'</div><div class="sm"><b>المؤشر:</b> '+esc(t.Indicator)+'</div><div class="sm mut">'+esc(t.Domain)+' · يوم '+esc(t.ProgramDay)+(t.AppliesTo!=='كل المشاريع'?' · '+esc(t.AppliesTo):'')+(t.Origin==='جديد'?' · <b>جديدة</b>':'')+'</div>'+
-    (why?'<div class="sm" style="color:var(--acc)">مقترحة لأن: '+esc(why)+'</div>':'')+'<div class="row"><span class="grow"></span><button class="btn sm" data-act="addRoutine" data-v="'+esc(id)+'">+ إضافة</button></div></div>';}
+  var h='<div class="card" id="rmpick"><h3>مهام خريطة الطريق — اختار من القائمة</h3><div class="sm mut">دوس على أي مهمة عشان تشوف تفاصيلها، وعلى «+ إضافة» عشان تتسند. الأفضل روتين أو اتنين بس في الجلسة، والأولوية للفلوس.</div>';
+  if(sug.length)h+='<div class="rmdom" style="background:var(--acc-l);color:#8a6418"><span>مقترحة من تشيك ليست النهارده</span><span>'+sug.length+'</span></div>'+sug.map(function(id){return rmRow(id,why[id],true)}).join('');
+  var doms=[];L.roadmapList.forEach(function(t){if(doms.indexOf(t.Domain)<0)doms.push(t.Domain)});var q=normAr(f.q);
+  var fc=function(k,val,lbl){return '<span class="chip'+(f[k]===val?' on':'')+'" data-act="rmfc" data-k="'+k+'" data-v="'+esc(val)+'">'+esc(lbl)+'</span>'};
+  h+='<div class="rmdom"><span>كل المهام</span></div><div class="rmfil">'+fc('freq','','كل التكرارات')+[['DAILY','يومي'],['WEEKLY','أسبوعي'],['BIWEEKLY','كل أسبوعين'],['MONTHLY','شهري']].map(function(x){return fc('freq',x[0],x[1])}).join('')+'</div>'+
+    '<div class="rmfil">'+fc('dom','','كل المجالات')+doms.map(function(x){return fc('dom',x,x)}).join('')+'</div>'+
+    '<input type="text" id="rmq" data-act="rmq" value="'+esc(f.q)+'" placeholder="تصفية بكلمة (اختياري)" style="margin:2px 0 4px">';
+  var list=L.roadmapList.filter(function(t){return ok(t.RoadmapID)&&sug.indexOf(t.RoadmapID)<0&&(!f.freq||t.FrequencyCode===f.freq)&&(!f.dom||t.Domain===f.dom)&&(!q||normAr(t.TaskText+' '+t.Code+' '+t.ExpectedResult+' '+t.Indicator).indexOf(q)>=0)});
+  h+='<div class="sm mut">'+list.length+' مهمة'+(mode?' مناسبة لمشروع «'+esc(mode)+'»':'')+'</div>';
+  doms.forEach(function(dm){var items=list.filter(function(t){return t.Domain===dm});if(!items.length)return;
+    h+='<div class="rmdom"><span>'+esc(dm)+'</span><span>'+items.length+'</span></div>'+items.map(function(t){return rmRow(t.RoadmapID)}).join('');});
+  if(!list.length)h+='<div class="sm mut" style="padding:8px">مفيش مهام بالاختيار ده — غيّر التصفية.</div>';
+  return h+'</div>';}
+function rmRow(id,why,sug){var t=S.L.roadmap[id];if(!t)return '';
+  return '<div class="rmrow'+(sug?' sug':'')+'"><div class="rmmain" data-act="rmx"><span class="tag">'+esc(t.Code)+'</span><span class="tag gray">'+esc(t.FrequencyText)+'</span><div class="txt">'+esc(t.TaskText)+'</div>'+
+    (why?'<div class="sm" style="color:#8a6418">مقترحة لأن: '+esc(why)+'</div>':'')+
+    '<div class="more"><div><b>النتيجة:</b> '+esc(t.ExpectedResult)+'</div><div><b>هنتابعه بـ:</b> '+esc(t.Indicator)+'</div><div class="mut">'+esc(t.Domain)+' · يوم '+esc(t.ProgramDay)+(t.AppliesTo&&t.AppliesTo!=='كل المشاريع'?' · '+esc(t.AppliesTo):'')+'</div></div></div>'+
+    '<button class="btn sm" data-act="addRoutine" data-v="'+esc(id)+'">+ إضافة</button></div>';}
+function rmCard(id,why){return rmRow(id,why);}
 function routineLibCard(rid){var r=S.L.routine[rid];if(!r)return '';var key='rl_'+rid,open=S.openCards[key];return '<div class="card" style="margin:0"><div class="row"><b class="grow">'+esc(r.RoutineName)+'</b><span class="tag acc">'+esc(r.RoutineType)+'</span><span class="tag gray">'+esc(r.FrequencyText)+'</span></div><div class="sm">'+esc(r.Purpose)+'</div><div class="eg sm">'+esc(r.SummaryEg)+'</div><div class="sm mut">الملاءمة: '+esc(r.Applicability)+'</div>'+
   (open?'<ol class="steps sm">'+(S.L.rsteps[rid]||[]).map(function(s){return '<li><b>'+esc(s.StepTitle)+':</b> '+esc(s.Instruction)+'</li>'}).join('')+'</ol><div class="sm"><b>بديل ورقي:</b> '+esc(r.PaperAlternative)+'</div>':'')+
   '<div class="row"><button class="btn sm ghost" data-act="toggle" data-v="'+key+'">'+(open?'إخفاء':'الخطوات')+'</button><span class="grow"></span><button class="btn sm" data-act="addRoutine" data-v="'+rid+'">+ إضافة</button></div></div>';}
@@ -549,7 +584,7 @@ function st10(){var e=clientChecks(),w=clientWarnings();return '<div class="card
 /* ============================================================ plan */
 function openPlan(sid){Promise.all([call('planHtml',sid),call('planText',sid),call('plan',sid)]).then(function(r){S.plan={sid:sid,html:r[0],text:r[1],data:r[2]};S.view='plan';render();window.scrollTo(0,0);}).catch(showErr);}
 function vPlan(){var p=S.plan;if(!p)return '';
-  if(S.mode==='simple')return '<div class="row noprint"><button class="btn ghost" data-act="home">→ مشروعاتي</button><span class="grow"></span><button class="btn" data-act="printPlan">🖨 طباعة ورقة الجلسة</button>'+(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">حفظ PDF في Drive</button>')+'<button class="btn sec" data-act="copyPlan">نسخ نص لواتساب</button></div><iframe class="plan" id="planFrame" title="ورقة الجلسة" style="height:80vh"></iframe>';var phone=(S.journey&&S.journey.project.Phone||'').replace(/\D/g,'');if(phone.indexOf('0')===0)phone='2'+phone;
+  if(S.mode==='simple'||p.fromRecords)return '<div class="row noprint">'+(p.fromRecords?'<button class="btn ghost" data-act="recBack">→ السجلات</button>':'<button class="btn ghost" data-act="home">→ مشروعاتي</button>')+'<span class="grow"></span><button class="btn" data-act="printPlan">🖨 طباعة'+(p.multi?' ('+p.multi+' جلسات)':' ورقة الجلسة')+'</button>'+(p.multi?'':(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">حفظ PDF في Drive</button>')+'<button class="btn sec" data-act="copyPlan">نسخ نص لواتساب</button>')+'</div><iframe class="plan" id="planFrame" title="ورقة الجلسة" style="height:80vh"></iframe>';var phone=(S.journey&&S.journey.project.Phone||'').replace(/\D/g,'');if(phone.indexOf('0')===0)phone='2'+phone;
   var a4=p.mode==='a4';
   return '<div class="row noprint"><button class="btn ghost" data-act="backToJourney">→ رحلة المشروع</button><span class="chip'+(a4?'':' on')+'" data-act="planMode" data-v="plan">الخطة الكاملة</span><span class="chip'+(a4?' on':'')+'" data-act="planMode" data-v="a4">📄 ملخص الجلسة (ورقة A4)</span><span class="grow"></span><button class="btn sec" data-act="printPlan">🖨 طباعة / حفظ PDF من المتصفح</button>'+(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">📄 حفظ PDF في Drive</button>')+
   '<button class="btn sec" data-act="copyPlan">📋 نسخ نص الخطة</button><a class="btn" style="text-decoration:none" target="_blank" href="https://wa.me/'+(phone||'')+'?text='+encodeURIComponent(p.text)+'">واتساب</a></div><iframe class="plan" id="planFrame" title="الخطة الأسبوعية"></iframe>';}
@@ -596,8 +631,34 @@ function vHome(){var ms=S.boot.mentors.filter(function(m){return m.DataType!=='�
   return h;}
 function ssStart(pid,draftId){var p=draftId?call('getDraft',draftId):call('startSession',pid,S.mentorId,S.boot.today);
   run(p,'تحضير الجلسة…').then(function(ctx){S.ctx=ctx;S.d=upgradeDraft(ctx.draft||newDraft(ctx),ctx);S.d.mode='simple';S.view='ss';S.dirty=false;S.openCards={};S.ssErr=null;render();window.scrollTo(0,0);});}
-function openSheet(sid){run(call('sessionSheetHtml',sid),'تجهيز ورقة الجلسة…').then(function(h){S.plan={sid:sid,a4:h,mode:'a4'};S.view='plan';render();window.scrollTo(0,0)});}
-function sec(n,title,body,sub){return '<div class="card"><div class="sh"><span class="n">'+n+'</span><h3>'+title+'</h3></div>'+(sub?'<div class="sm mut" style="margin-bottom:6px">'+sub+'</div>':'')+body+'</div>';}
+function openSheet(sid,fromRec){run(call('sessionSheetHtml',sid),'تجهيز ورقة الجلسة…').then(function(h){S.plan={sid:sid,a4:h,mode:'a4',fromRecords:!!fromRec};S.view='plan';render();window.scrollTo(0,0)});}
+
+/* ============================================================ RECORDS: every saved session — search, filter, print one or many */
+function loadRecords(){S.rec=S.rec||{q:'',mentor:'',from:'',to:'',sel:{}};S.view='records';
+  run(call('listSessions',{includeTest:S.includeTest}),'تحميل السجلات…').then(function(l){S.rec.list=l;render();window.scrollTo(0,0)});}
+function recFiltered(){var r=S.rec,q=normAr(r.q||'');return (r.list||[]).filter(function(x){
+  return (!r.mentor||x.MentorID===r.mentor)&&(!r.from||String(x.SessionDate)>=r.from)&&(!r.to||String(x.SessionDate)<=r.to)&&
+    (!q||normAr([x.OwnerName,x.ProjectName,x.MentorName,x.ProblemName,x.Location,x.Governorate,x.SessionID].join(' ')).indexOf(q)>=0)});}
+function recSelIds(){var sel=S.rec.sel;return recFiltered().filter(function(x){return sel[x.SessionID]}).map(function(x){return x.SessionID});}
+function vRecords(){var r=S.rec;if(!r||!r.list)return '<div class="card">جارٍ التحميل…</div>';var list=recFiltered(),ms=S.boot.mentors;
+  var h='<div class="row"><h2 class="grow" style="margin:6px 0">السجلات — كل الجلسات المحفوظة ('+list.length+(list.length!==r.list.length?' من '+r.list.length:'')+')</h2><button class="btn sm sec" data-act="records">تحديث</button></div>'+
+    '<input type="text" id="rq" data-act="rq" value="'+esc(r.q)+'" placeholder="دوّر باسم صاحب المشروع أو المنتور أو المشكلة أو القرية" style="margin:4px 0 8px">'+
+    '<div class="grid g3"><div><label class="f">المنتور</label><select data-act="recf" data-k="mentor"><option value="">الكل</option>'+ms.map(function(m){return '<option value="'+esc(m.MentorID)+'"'+(r.mentor===m.MentorID?' selected':'')+'>'+esc(m.MentorName)+'</option>'}).join('')+'</select></div>'+
+    '<div><label class="f">من تاريخ</label><input type="date" data-act="recf" data-k="from" value="'+esc(r.from)+'"></div><div><label class="f">إلى تاريخ</label><input type="date" data-act="recf" data-k="to" value="'+esc(r.to)+'"></div></div>';
+  if(!r.list.length)return h+'<div class="card mut">لسه مفيش جلسات محفوظة.</div>';
+  if(!list.length)return h+'<div class="card mut">مفيش نتايج — غيّر البحث أو التصفية.</div>';
+  return h+list.map(function(x){var on=!!r.sel[x.SessionID];return '<div class="rec'+(on?' on':'')+'"><label class="ck"><input type="checkbox" data-act="recSel" data-v="'+esc(x.SessionID)+'"'+(on?' checked':'')+'></label><div class="grow" style="min-width:0">'+
+    '<div class="own">'+esc(x.OwnerName||x.ProjectName)+(x.DataType==='تجريبي'?' <span class="testflag">تجريبي</span>':'')+'</div>'+
+    '<div class="sm">الجلسة '+esc(x.SessionNo)+' · <bdi>'+esc(x.SessionDate)+'</bdi>'+(x.MentorName?' · '+esc(x.MentorName):'')+(x.Location?' · '+esc(x.Location):'')+'</div>'+
+    (x.ProblemName?'<div class="sm mut">التركيز: '+esc(x.ProblemName)+'</div>':'')+
+    '<div class="sm"><span class="tag">مهام جديدة: '+x.NewTasks+'</span>'+(x.ChecklistScorePct!==''&&x.ChecklistScorePct!==null&&x.ChecklistScorePct!==undefined?'<span class="tag acc">التشيك ليست: '+esc(x.ChecklistScorePct)+'%</span>':'')+(x.PlanEnd?'<span class="tag gray">الجاية: <bdi>'+esc(x.PlanEnd)+'</bdi></span>':'')+'</div>'+
+    '<div class="acts"><button class="btn sm" data-act="recOpen" data-v="'+esc(x.SessionID)+'">ورقة الجلسة / طباعة</button></div></div></div>'}).join('')+'<div style="height:60px"></div>';}
+function vRecBar(){if(!S.rec||!S.rec.list||!S.rec.list.length)return '';var n=recSelIds().length;
+  return '<div class="recbar"><button class="btn" data-act="recPrint"'+(n?'':' disabled')+'>اطبع المحدد ('+n+')</button><button class="btn sec" data-act="recAll">حدد كل الظاهر</button>'+(n?'<button class="btn sec" data-act="recNone">إلغاء التحديد</button>':'')+'<span class="grow sm mut cnt">حدد جلسة أو أكتر واطبعهم مرة واحدة — كل جلسة بتبدأ في صفحة جديدة.</span></div>';}
+function printHtml(html,fr){var touch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
+  if(touch){var w=window.open('','_blank');if(w){w.document.open();w.document.write(html);w.document.close();setTimeout(function(){try{w.focus();w.print()}catch(e){}},600);return;}}
+  if(fr){fr.contentWindow.focus();fr.contentWindow.print();}}
+function sec(n,title,body,sub,id){return '<div class="card"'+(id?' id="'+id+'"':'')+'><div class="sh"><span class="n">'+n+'</span><h3>'+title+'</h3></div>'+(sub?'<div class="sm mut" style="margin-bottom:6px">'+sub+'</div>':'')+body+'</div>';}
 function chipsL(path,pairs,deflt){var v=getP(S.d,path)||deflt||'';return pairs.map(function(o){return '<span class="chip'+(v===o[0]?' on':'')+'" data-act="chip" data-path="'+path+'" data-v="'+esc(o[0])+'">'+esc(o[1])+'</span>'}).join('');}
 var SS_STATUS=[['مكتملة','اتعملت ✓'],['مكتملة جزئيًا','جزئي'],['قيد التنفيذ','شغال فيها'],['لم تبدأ','لسه'],['متعثرة','متعطلة']];
 function stepsOf(a){var st=S.L.steps[a.TaskID]||[];if(st.length)return '<ol class="steps sm">'+st.map(function(x){return '<li><b>'+esc(x.StepTitle)+':</b> '+esc(x.Instruction)+'</li>'}).join('')+'</ol>';
@@ -605,11 +666,11 @@ function stepsOf(a){var st=S.L.steps[a.TaskID]||[];if(st.length)return '<ol clas
 function vSS(){var c=S.ctx,d=S.d,p=c.project,L=S.L,n=0,h='';
   h+='<div class="row"><button class="btn ghost" data-act="home">→ مشروعاتي</button><h2 class="grow" style="margin:0">'+esc(p.OwnerName)+' <span class="mut" style="font-size:15px">— '+esc(p.ProjectName)+' · الجلسة '+c.session.SessionNo+'</span>'+(p.DataType==='تجريبي'?' <span class="testflag">تجريبي</span>':'')+'</h2></div>';
   // 1 dates
-  h+=sec(++n,'الجلسة','<div class="grid g3"><div><label class="f req">تاريخ الجلسة</label>'+inp('sessionDate','date')+'</div><div><label class="f req">الجلسة الجاية</label>'+inp('planEnd','date')+'</div>'+
+  h+=sec(++n,'الجلسة','<div class="grid g3"><div id="f_sessionDate"><label class="f req">تاريخ الجلسة</label>'+inp('sessionDate','date')+'</div><div id="f_planEnd"><label class="f req">الجلسة الجاية</label>'+inp('planEnd','date')+'</div>'+
     (c.isRoadmap?'<div><label class="f">بعد يوم التدريب</label><select data-bind="afterTrainingDay"><option value=""></option>'+trainingDays().map(function(x){return '<option'+(d.afterTrainingDay===x?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select></div>':'')+'</div>');
   // 2 previous tasks
   if(c.openAssignments.length)h+=sec(++n,'المهام اللي فاتت ('+c.openAssignments.length+')',c.openAssignments.map(function(a){var P='reviews|'+a.AssignmentID+'|',r=d.reviews[a.AssignmentID],k='ssr_'+a.AssignmentID;
-    return '<div class="card flat" style="padding:8px 10px"><div class="row"><b class="grow">'+esc(a.TaskName)+'</b><span class="sm mut">من جلسة '+a.SessionNo+' · ميعادها '+esc(a.CurrentDeadline||a.OriginalDeadline||'')+'</span><button class="btn sm ghost" data-act="toggle" data-v="'+k+'">'+(S.openCards[k]?'إخفاء الخطوات':'الخطوات')+'</button></div>'+
+    return '<div class="card flat" id="rv_'+esc(a.AssignmentID)+'" style="padding:8px 10px"><div class="row"><b class="grow">'+esc(a.TaskName)+'</b><span class="sm mut">من جلسة '+a.SessionNo+' · ميعادها '+esc(a.CurrentDeadline||a.OriginalDeadline||'')+'</span><button class="btn sm ghost" data-act="toggle" data-v="'+k+'">'+(S.openCards[k]?'إخفاء الخطوات':'الخطوات')+'</button></div>'+
       (S.openCards[k]?stepsOf(a):'')+'<div style="margin:4px 0"><span class="sm">اتعملت؟ </span>'+chipsL(P+'Status',SS_STATUS)+'</div>'+
       (r.Status&&r.Status!=='مكتملة'?'<div style="margin:4px 0"><span class="sm">هتعمل فيها إيه؟ </span>'+chipsL(P+'Decision',[['ترحيل بموعد جديد','تكمل للجلسة الجاية'],['إلغاء لعدم الملاءمة','تتلغي']],'ترحيل بموعد جديد')+'</div>':'')+
       '<div class="grid g2">'+inp(P+'ImplementationNote','text','حصل إيه؟ (اختياري)')+inp(P+'EvidenceNote','text','الدليل اللي اتشاف (اختياري)')+'</div></div>'}).join(''),'علّم كل مهمة: اتعملت ولا لأ. اللي متعملتش بتكمل للجلسة الجاية إلا لو اخترت تتلغي.');
@@ -636,45 +697,52 @@ function vSS(){var c=S.ctx,d=S.d,p=c.project,L=S.L,n=0,h='';
     var pt=L.LIB_Actions.filter(function(a){return a.ProblemID===D.ProblemID&&a.Active!=='لا'});
     body+='<h4>مهام المشكلة دي من المكتبة ('+pt.length+')</h4><div class="grid g2">'+pt.map(function(a){return taskCard(a.TaskID,open[a.TaskID],done[a.TaskID],added[a.TaskID])}).join('')+'</div>';}
   if(d.newTasks.length)body+='<h4>المهام اللي هتتسند ('+d.newTasks.length+')</h4>'+d.newTasks.map(function(t,i){var a=L.action[t.TaskID]||{},P='newTasks|'+i+'|';
-    return '<div class="card flat" style="padding:8px 10px"><div class="row"><b class="grow">'+esc(t.TaskID==='CUSTOM'?(t.TaskName||'مهمة جديدة'):a.TaskName)+'</b><button class="btn sm danger" data-act="delTask" data-i="'+i+'">شيلها</button></div>'+
+    return '<div class="card flat" id="nt_'+i+'" style="padding:8px 10px"><div class="row"><b class="grow">'+esc(t.TaskID==='CUSTOM'?(t.TaskName||'مهمة جديدة'):a.TaskName)+'</b><button class="btn sm danger" data-act="delTask" data-i="'+i+'">شيلها</button></div>'+
       (t.TaskID==='CUSTOM'?'<div class="grid g2"><div><label class="f req">اسم المهمة</label>'+inp(P+'TaskName')+'</div><div><label class="f">المطلوب في الآخر</label>'+inp(P+'Deliverable')+'</div></div><label class="f req">الخطوات (سطر لكل خطوة)</label>'+ta(P+'CustomInstructions'):'')+
       '<div class="grid g3"><div><label class="f req">آخر ميعاد</label>'+inp(P+'Deadline','date')+'</div><div><label class="f">المسؤول</label>'+inp(P+'Responsible','text',a.Responsible||'صاحب المشروع')+'</div>'+(t.TaskID!=='CUSTOM'?'<div><label class="f">ملاحظة للمشروع ده</label>'+inp(P+'CustomInstructions','text','مثال: ابدأ بأكتر منتج بيتباع')+'</div>':'')+'</div></div>'}).join('');
   body+='<div class="row" style="margin-top:8px"><select id="extraTask" class="grow" style="width:auto"><option value="">+ مهمة تانية من المكتبة…</option>'+L.LIB_Areas.map(function(a){return '<optgroup label="'+esc(a.AreaName)+'">'+L.LIB_Actions.filter(function(x){return x.AreaID===a.AreaID}).map(function(x){return '<option value="'+x.TaskID+'">'+esc(x.TaskName)+'</option>'}).join('')+'</optgroup>'}).join('')+'</select><button class="btn sm sec" data-act="addExtra">إضافة</button><button class="btn sm sec" data-act="addCustom">+ مهمة بإيدي</button></div>';
-  h+=sec(++n,'المشكلة والمهام الجديدة',body,prevP?'★ = المشكلة اللي كنا شغالين عليها. اختار المشكلة، وبعدين اختار المهام من المكتبة.':'اختار المجال والمشكلة، وبعدين اختار المهام من المكتبة.');
+  h+=sec(++n,'المشكلة والمهام الجديدة',body,prevP?'★ = المشكلة اللي كنا شغالين عليها. اختار المشكلة، وبعدين اختار المهام من المكتبة.':'اختار المجال والمشكلة، وبعدين اختار المهام من المكتبة.','sec_problem');
   // 7 routines
   var active={};c.routines.forEach(function(r){var f=routineFinal(r);if(f!=='منتهي')active[r.RoutineID]=f});var addedR={};d.newRoutines.forEach(function(r){addedR[r.RoutineID]=1});
   var rec=[];d.newTasks.forEach(function(t){var a=L.action[t.TaskID];if(a)ids(a.StrategyIDs).forEach(function(sid){var st=L.strategy[sid];if(st)ids(st.RoutineIDs).forEach(function(r){if(rec.indexOf(r)<0)rec.push(r)})})});
   var areaOf=D.ProblemID&&L.problem[D.ProblemID]?L.problem[D.ProblemID].AreaID:D.AreaID;L.LIB_Routines.forEach(function(r){if(r.RoutineType==='روتين أساسي'&&r.AreaID===areaOf&&rec.indexOf(r.RoutineID)<0)rec.push(r.RoutineID)});
   rec=rec.filter(function(r){return !active[r]&&!addedR[r]&&L.routine[r]&&!L.routine[r].IsRoadmap});
-  var rb=d.newRoutines.length?d.newRoutines.map(function(r,i){var lr=L.routine[r.RoutineID],P='newRoutines|'+i+'|';return '<div class="card flat" style="padding:8px 10px"><div class="row"><b class="grow">'+(lr.Code?'<span class="tag">'+esc(lr.Code)+'</span> ':'')+esc(lr.RoutineName)+'</b><span class="sm mut">'+esc(lr.FrequencyText)+'</span><button class="btn sm danger" data-act="delRoutine" data-i="'+i+'">شيله</button></div>'+
+  var rb=d.newRoutines.length?d.newRoutines.map(function(r,i){var lr=L.routine[r.RoutineID],P='newRoutines|'+i+'|';return '<div class="card flat" id="nr_'+i+'" style="padding:8px 10px"><div class="row"><b class="grow">'+(lr.Code?'<span class="tag">'+esc(lr.Code)+'</span> ':'')+esc(lr.RoutineName)+'</b><span class="sm mut">'+esc(lr.FrequencyText)+'</span><button class="btn sm danger" data-act="delRoutine" data-i="'+i+'">شيله</button></div>'+
     '<div class="grid g2"><div><label class="f'+(lr.IsRoadmap?' req':'')+'">إمتى وفين</label>'+inp(P+'WhenWhere','text','مثال: كل يوم قبل النوم')+'</div><div><label class="f">ملاحظة</label>'+inp(P+'CustomNote')+'</div></div></div>'}).join(''):'';
   rb+=(rec.length?'<h4>روتين مقترح</h4><div class="grid g2">'+rec.map(routineLibCard).join('')+'</div>':'')+(c.isRoadmap?vRoadmapPicker(active,addedR):'');
   h+=sec(++n,'روتين جديد',rb||'<div class="sm mut">اختار مشكلة ومهام الأول عشان تظهر الاقتراحات.</div>','الروتين بيتسند مرة واحدة ويفضل مستمر، وبيتراجع كل جلسة.');
   // 8 mentor note
   h+=sec(++n,'كلمة المنتور',ta('mentorSummary','رسالة لصاحب المشروع تظهر في ورقة الجلسة')+'<div style="margin-top:6px"><span class="sm">صاحب المشروع شايف إنه يقدر ينفذ (اختياري): </span>'+[1,2,3,4,5].map(function(x){return '<span class="chip'+(String(d.readiness)===String(x)?' on':'')+'" data-act="readiness" data-v="'+x+'">'+x+'</span>'}).join('')+'</div>');
-  if(S.ssErr)h+='<div class="card box bad"><b>محتاج تكمّل قبل الحفظ:</b><ul>'+S.ssErr.map(function(x){return '<li>'+esc(x)+'</li>'}).join('')+'</ul></div>';
+  if(S.ssErr)h+='<div class="card box bad" id="ssErrBox"><b>محتاج تكمّل قبل الحفظ (دوس على أي سطر يوديك عنده):</b><ul class="errlist">'+S.ssErr.map(function(x){return '<li data-act="jumpErr" data-v="'+esc(x.a||'ssErrBox')+'">'+esc(x.m)+'</li>'}).join('')+'</ul></div>';
   return h+'<div style="height:70px"></div>';}
 function vSSBar(){return '<div class="savebar"><button class="btn" data-act="ssFinalize" style="font-size:16px;padding:8px 20px">💾 احفظ الجلسة واطبع الورقة</button><button class="btn sec" data-act="saveDraft">حفظ كمسودة</button>'+
   '<span class="grow sm mut" id="saveState">'+(S.lastSaved?'اتحفظت المسودة '+esc(S.lastSaved.slice(11)):'المسودة بتتحفظ لوحدها')+'</span><button class="btn sm danger" data-act="discard">احذف المسودة</button></div>';}
-function ssChecks(){var d=S.d,c=S.ctx,e=[];if(!d.sessionDate)e.push('تاريخ الجلسة');if(!d.planEnd||d.planEnd<=d.sessionDate)e.push('ميعاد الجلسة الجاية (بعد تاريخ الجلسة)');
-  if(!d.diagnosis.ProblemID&&!(c.previousSession&&c.previousSession.FocusProblemID))e.push('اختار المشكلة (خطوة «المشكلة والمهام الجديدة»)');
-  c.openAssignments.forEach(function(a){if(!d.reviews[a.AssignmentID].Status)e.push('علّم المهمة «'+a.TaskName+'»: اتعملت ولا لأ')});
-  d.newTasks.forEach(function(t){if(!t.Deadline)e.push('آخر ميعاد لكل مهمة جديدة');if(t.TaskID==='CUSTOM'&&(!String(t.TaskName||'').trim()||!String(t.CustomInstructions||'').trim()))e.push('اسم وخطوات المهمة اللي كتبتها بإيدك')});
-  if(c.isRoadmap){if(!d.projectMode)e.push('نوع المشروع في التشيك ليست');var miss=c.checklistItems.filter(function(it){return !(d.checklist[it.ItemID]||{}).Value}).length;if(miss)e.push('قيّم كل بنود التشيك ليست — ناقص '+miss);}
-  d.newRoutines.forEach(function(r){var lr=S.L.routine[r.RoutineID]||{};if(lr.IsRoadmap&&!String(r.WhenWhere||'').trim())e.push('«إمتى وفين» لـ '+lr.Code)});
+function ssChecks(){var d=S.d,c=S.ctx,e=[],E=function(m,a){e.push({m:m,a:a})};
+  if(!d.sessionDate)E('اكتب تاريخ الجلسة','f_sessionDate');if(!d.planEnd||d.planEnd<=d.sessionDate)E('ميعاد الجلسة الجاية لازم يكون بعد تاريخ الجلسة','f_planEnd');
+  c.openAssignments.forEach(function(a){if(!d.reviews[a.AssignmentID].Status)E('علّم المهمة «'+a.TaskName+'»: اتعملت ولا لأ','rv_'+a.AssignmentID)});
+  if(c.isRoadmap){if(!d.projectMode)E('اختار نوع المشروع في التشيك ليست','cl_mode');var miss=c.checklistItems.filter(function(it){return !(d.checklist[it.ItemID]||{}).Value});if(miss.length)E('قيّم كل بنود التشيك ليست — ناقص '+miss.length,'cl_'+miss[0].ItemID);}
+  if(!d.diagnosis.ProblemID&&!(c.previousSession&&c.previousSession.FocusProblemID))E('اختار المشكلة اللي هتشتغلوا عليها','sec_problem');
+  d.newTasks.forEach(function(t,i){var nm=t.TaskID==='CUSTOM'?(t.TaskName||'المهمة اللي كتبتها'):((S.L.action[t.TaskID]||{}).TaskName||'');if(!t.Deadline)E('آخر ميعاد للمهمة «'+nm+'»','nt_'+i);if(t.TaskID==='CUSTOM'&&(!String(t.TaskName||'').trim()||!String(t.CustomInstructions||'').trim()))E('اسم وخطوات المهمة اللي كتبتها بإيدك','nt_'+i)});
+  d.newRoutines.forEach(function(r,i){var lr=S.L.routine[r.RoutineID]||{};if(lr.IsRoadmap&&!String(r.WhenWhere||'').trim())E('«إمتى وفين» للروتين '+(lr.Code||lr.RoutineName),'nr_'+i)});
   return e;}
+function markErrs(){(S.ssErr||[]).forEach(function(x){var el=x.a&&document.getElementById(x.a);if(el)el.classList.add('errmark')});}
+function jumpTo(id){var el=document.getElementById(id);if(!el)return;var top=document.querySelector('.top');var y=el.getBoundingClientRect().top+window.scrollY-((top?top.offsetHeight:0)+14);
+  window.scrollTo({top:Math.max(0,y),behavior:'smooth'});el.classList.remove('errhl');void el.offsetWidth;el.classList.add('errhl');
+  var f=el.querySelector('input:not([type=checkbox]),textarea');if(f&&!f.value&&el.tagName!=='TR')setTimeout(function(){try{f.focus({preventScroll:true})}catch(x){}},450);}
 function ssPayload(){var P=payload(),c=S.ctx;P.mode='simple';
   P.reviews.forEach(function(r){if(r.Status==='مكتملة')r.Decision='تم الإنجاز';else if(r.Decision!=='إلغاء لعدم الملاءمة')r.Decision='ترحيل بموعد جديد';});
   P.routineReviews.forEach(function(r){if(!r.Decision)r.Decision='استمرار';r.occurrences.forEach(function(o){if(!o.Status)o.Status='لم يتم'});var rt=c.routines.filter(function(x){return x.RAID===r.RAID})[0];if(rt&&rt.IsRoadmap&&rt.slots.length&&!r.EvidenceSeen)r.EvidenceSeen='لا';});
   if(!P.diagnosis.ProblemID)P.diagnosis={ProblemID:'',causes:[]};else P.diagnosis.causes=P.diagnosis.causes||[];
   P.strategy={PrimaryStrategyID:'',SupportingStrategyID:'',SupportJustification:''};return P;}
-function ssFinalize(){var e=ssChecks();S.ssErr=e.length?e:null;if(e.length){render();window.scrollTo(0,document.body.scrollHeight);return;}
-  var sid=S.ctx.session.SessionID;run(call('finalize',sid,ssPayload()),'حفظ الجلسة…').then(function(){S.dirty=false;toast('اتحفظت الجلسة');S.ctx=null;S.d=null;openSheet(sid);},function(err){S.ssErr=(err&&err.details)||[String(err&&err.message||err)];render();});}
+function ssFinalize(){var e=ssChecks();S.ssErr=e.length?e:null;S.ssLocal=true;if(e.length){render();toast('ناقص: '+e[0].m+(e.length>1?' (+'+(e.length-1)+')':''),3500);jumpTo(e[0].a);return;}
+  var sid=S.ctx.session.SessionID;run(call('finalize',sid,ssPayload()),'حفظ الجلسة…').then(function(){S.dirty=false;S.ssErr=null;toast('اتحفظت الجلسة');S.ctx=null;S.d=null;openSheet(sid);},
+    function(err){S.ssLocal=false;S.ssErr=((err&&err.details)||[String(err&&err.message||err)]).map(function(m){return {m:m}});closeModal();render();jumpTo('ssErrBox');});}
 
 /* ============================================================ events */
 document.addEventListener('input',function(e){var b=e.target.getAttribute('data-bind');if(b&&S.d){var v=e.target.value;setP(S.d,b,v);S.dirty=true;
   if(/BeforeValue|AfterValue|kpiValues/.test(b)){clearTimeout(window._rr);window._rr=setTimeout(function(){keepScroll(render)},700);}}
   var a=e.target.getAttribute('data-act');if(a==='searchProjects'){S.q=e.target.value;clearTimeout(window._sq);window._sq=setTimeout(function(){keepScroll(render);var x=document.getElementById('pq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},250);}
+  if(a==='rq'){S.rec.q=e.target.value;clearTimeout(window._rq);window._rq=setTimeout(function(){keepScroll(render);var x=document.getElementById('rq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},250);}
   if(a==='rmq'){S.rmf.q=e.target.value;clearTimeout(window._rmq);window._rmq=setTimeout(function(){keepScroll(render);var x=document.getElementById('rmq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},300);}
   if(a==='jsearch'){S.jf.q=e.target.value;clearTimeout(window._jq);window._jq=setTimeout(function(){keepScroll(render);var x=document.getElementById('jq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},300);}});
 document.addEventListener('change',function(e){var t=e.target,a=t.getAttribute('data-act'),b=t.getAttribute('data-bind');
@@ -683,7 +751,9 @@ document.addEventListener('change',function(e){var t=e.target,a=t.getAttribute('
   if(a==='toggleTest'){S.includeTest=t.checked;if(S.view==='dashboard')loadDash();else loadProjects();}
   if(a==='jf'){S.jf[t.getAttribute('data-k')]=t.value;var all=t.value?1:0;if(all)S.journey.sessions.forEach(function(s){S.openCards['ses_'+s.SessionID]=1});render();}
   if(a==='df'||a==='dfi'){S.df[t.getAttribute('data-k')]=t.value;if(a==='df')loadDash();}
-  if(a==='rmf'){S.rmf[t.getAttribute('data-k')]=t.value;keepScroll(render);}});
+  if(a==='rmf'){S.rmf[t.getAttribute('data-k')]=t.value;keepScroll(render);}
+  if(a==='recf'){S.rec[t.getAttribute('data-k')]=t.value;keepScroll(render);}
+  if(a==='recSel'){S.rec.sel[t.getAttribute('data-v')]=t.checked?1:0;keepScroll(render);}});
 function keepScroll(fn){var y=window.scrollY;fn();window.scrollTo(0,y);}
 document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el)return;var a=el.getAttribute('data-act'),v=el.getAttribute('data-v');
   if(el.tagName==='SELECT'||(el.tagName==='INPUT'&&el.type!=='checkbox'&&el.type!=='button'))return;if(el.type==='checkbox')return;
@@ -721,7 +791,17 @@ document.addEventListener('click',function(e){var el=e.target.closest('[data-act
   delRoutine:function(){S.d.newRoutines.splice(+el.getAttribute('data-i'),1);S.dirty=true;keepScroll(render)},
   readiness:function(){S.d.readiness=v;S.dirty=true;keepScroll(render)},
   finalize:finalize,discard:function(){if(!confirm('حذف المسودة؟ لن تتأثر أي جلسة محفوظة.'))return;run(call('discardDraft',S.ctx.session.SessionID)).then(function(){S.dirty=false;if(S.mode==='simple'){S.view='home';S.ctx=null;S.d=null;refreshHome();}else openProject(S.ctx.project.ProjectID)})},
-  printPlan:function(){var f=document.getElementById('planFrame');f.contentWindow.focus();f.contentWindow.print()},
+  printPlan:function(){var f=document.getElementById('planFrame'),p=S.plan;printHtml((S.mode==='simple'||p.mode==='a4'||p.fromRecords)&&p.a4?p.a4:p.html,f)},
+  records:function(){if(S.view==='ss'&&S.dirty)saveDraft(true);if(S.view==='session'&&S.dirty)saveDraft(true);S.ctx=null;S.d=null;S.plan=null;S.view='records';['projects','dashboard'].forEach(function(n){var b=document.getElementById('nav-'+n);if(b)b.classList.remove('on')});loadRecords()},
+  recBack:function(){S.plan=null;S.view='records';render();window.scrollTo(0,0)},
+  recOpen:function(){openSheet(v,true)},
+  recAll:function(){recFiltered().forEach(function(x){S.rec.sel[x.SessionID]=1});keepScroll(render)},
+  recNone:function(){S.rec.sel={};keepScroll(render)},
+  recPrint:function(){var ids=recSelIds();if(!ids.length)return;if(ids.length>40){toast('أقصى حاجة 40 جلسة في المرة');return;}
+    run(call('sessionSheetsHtml',ids),'تجهيز '+ids.length+' ورقة…').then(function(h){S.plan={a4:h,mode:'a4',fromRecords:true,multi:ids.length};S.view='plan';render();window.scrollTo(0,0)})},
+  rmfc:function(){S.rmf[el.getAttribute('data-k')]=v;keepScroll(render)},
+  rmx:function(){el.closest('.rmrow').classList.toggle('open')},
+  jumpErr:function(){jumpTo(v)},
   home:function(){if(S.view==='ss'&&S.dirty)saveDraft(true);S.view='home';S.ctx=null;S.d=null;S.plan=null;refreshHome()},
   changeMentor:function(){S.mentorId='';lsSet('athar_mentor','');S.view='home';render()},
   uiMode:function(){if(S.view==='ss'&&S.dirty)saveDraft(true);S.mode=S.mode==='simple'?'adv':'simple';lsSet('athar_mode',S.mode);S.ctx=null;S.d=null;S.plan=null;if(S.mode==='simple'){S.view='home';refreshHome();}else go('projects');},

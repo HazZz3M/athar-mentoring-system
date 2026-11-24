@@ -1209,10 +1209,45 @@ function apiIntegrityCheck() {
 }
 
 /* ------------------------------------------------------------------ API dispatcher */
+
+/** All saved sessions across projects (records screen): search, filter and print. */
+function apiListSessions(opts) {
+  opts = opts || {};
+  var L = lib_();
+  var projects = index_(DB.all('DB_Projects'), 'ProjectID'), mentors = index_(DB.all('DB_Mentors'), 'MentorID');
+  var tasks = group_(DB.all('DB_TaskAssignments'), 'SessionID');
+  return DB.all('DB_Sessions').filter(function (s) {
+    return s.Status === C.SES_SAVED && (opts.includeTest || s.DataType !== C.TEST);
+  }).map(function (s) {
+    var p = projects[s.ProjectID] || {};
+    return { SessionID: s.SessionID, ProjectID: s.ProjectID, SessionNo: s.SessionNo, SessionDate: s.SessionDate, PlanEnd: s.PlanEnd,
+      OwnerName: p.OwnerName || '', ProjectName: p.ProjectName || '', Governorate: p.Governorate || '', Location: p.Location || '',
+      MentorID: s.MentorID, MentorName: (mentors[s.MentorID] || {}).MentorName || '',
+      ProblemName: s.FocusProblemID ? (L.problem[s.FocusProblemID] || {}).ProblemName || '' : '',
+      NewTasks: (tasks[s.SessionID] || []).length, ChecklistScorePct: s.ChecklistScorePct, MentorSummary: s.MentorSummary || '',
+      DataType: s.DataType, SavedAt: s.SavedAt };
+  }).sort(function (a, b) { return String(b.SessionDate).localeCompare(String(a.SessionDate)) || String(b.SavedAt).localeCompare(String(a.SavedAt)); });
+}
+
+/** Several session sheets in one printable document (each starts on a new page). */
+function apiSessionSheetsHtml(sessionIds) {
+  sessionIds = (sessionIds || []).slice(0, 40);
+  if (!sessionIds.length) throw AppError('اختار جلسة واحدة على الأقل');
+  var head = '', bodies = [];
+  sessionIds.forEach(function (sid) {
+    var h = apiSessionSheetHtml(sid, true);
+    var bi = h.indexOf('<body>'), be = h.lastIndexOf('</body>');
+    if (!head) head = h.slice(0, bi);
+    bodies.push(h.slice(bi + 6, be));
+  });
+  return head.replace('</style>', '.sheetbreak{break-before:page;page-break-before:always}</style>') + '<body>' +
+    bodies.map(function (b, i) { return i ? '<div class="sheetbreak">' + b + '</div>' : b; }).join('') + '</body></html>';
+}
+
 var API_ = { bootstrap: apiBootstrap, listProjects: apiListProjects, createProject: apiCreateProject, createMentor: apiCreateMentor,
   journey: apiGetJourney, startSession: apiStartSession, saveDraft: apiSaveDraft, getDraft: apiGetDraft, discardDraft: apiDiscardDraft,
   suggest: apiSuggest, finalize: apiFinalizeSession, plan: apiGetPlan, planHtml: apiPlanHtml, planText: apiPlanText,
-  sessionSheet: apiSessionSheet, sessionSheetHtml: apiSessionSheetHtml,
+  sessionSheet: apiSessionSheet, sessionSheetHtml: apiSessionSheetHtml, listSessions: apiListSessions, sessionSheetsHtml: apiSessionSheetsHtml,
   dashboard: apiDashboard, integrity: apiIntegrityCheck };
 
 function dispatch_(fn, args) {

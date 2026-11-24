@@ -135,6 +135,15 @@ console.log('== Simple session (default mentor screen)');
   const asg = X.DB.tables.DB_TaskAssignments.filter(a => a.ProjectID === ps.ProjectID);
   ok(asg.filter(a => a.IsOpen === 'لا').length === 1 && asg.filter(a => a.IsOpen === 'نعم' && a.CurrentDeadline === '2026-10-19').length === 1,
     'done task closes; not-started task continues to the next session date');
+  console.log('== Records (all saved sessions) + printing several sheets');
+  const recs = run(`apiListSessions({includeTest:true})`);
+  const mine = recs.filter(x => x.ProjectID === ps.ProjectID);
+  ok(mine.length === 2 && mine[0].OwnerName === 'أم أحمد' && mine[0].SessionDate >= mine[1].SessionDate && recs.every(x => x.SessionID),
+    'listSessions returns every saved session with the owner name, newest first (' + recs.length + ')');
+  ok(mine.every(x => x.ProblemName) && mine.find(x => x.SessionNo === 1).NewTasks === 2, 'records carry the focus problem and new-task count');
+  const multi = run(`apiSessionSheetsHtml(${J(mine.map(x => x.SessionID))})`);
+  ok((multi.match(/<body>/g) || []).length === 1 && (multi.match(/class="sheetbreak"/g) || []).length === 1 && multi.indexOf('class="toolbar"') < 0,
+    'several sheets merge into one document, each later sheet on a new page, no on-screen toolbar');
 }
 console.log(`ROADMAP RESULT: ${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

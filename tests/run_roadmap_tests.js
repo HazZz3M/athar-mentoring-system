@@ -92,7 +92,7 @@ const plan = run(`apiGetPlan('${c3.session.SessionID}')`);
 ok(plan.checklist && plan.checklist.pct === 9.3 && plan.checklist.firstPct === 7.4 && plan.checklist.gaps.length === 25, 'plan shows checklist score now vs first session and the remaining gaps');
 ok(plan.routines.BIWEEKLY.length === 1 && plan.routines.DAILY[0].Code === 'ي-٠١' && plan.routines.DAILY[0].WhenWhere, 'plan groups every-two-weeks routines and shows code + «إمتى وفين»');
 const html = run(`apiPlanHtml('${c3.session.SessionID}')`);
-ok(html.includes('تشيك ليست الروتينات') && html.includes('كل أسبوعين') && html.includes('ي-٠١'), 'plan HTML includes checklist, biweekly group and codes');
+ok(html.includes('تشيك ليست الروتينات') && html.includes('كل أسبوعين') && !/[يش]-[٠-٩]|أ[سب]-[٠-٩]/.test(html), 'plan HTML includes checklist and biweekly group, and shows no internal codes');
 ok(run(`apiPlanText('${c3.session.SessionID}')`).includes('📋 تشيك ليست الروتينات: 9.3% (أول جلسة 7.4%)'), 'WhatsApp text includes the score change');
 const d = run(`apiDashboard({})`);
 ok(d.roadmap && d.roadmap.projects === 1 && d.roadmap.avgFirst === 7.4 && d.roadmap.avgLast === 9.3 && d.roadmap.stable === 1 && d.roadmap.roadmapRoutines === 3,
@@ -104,7 +104,7 @@ console.log('== Session sheet (full print-out, nothing hidden)');
 const sheet = run(`apiSessionSheet('${c3.session.SessionID}')`);
 ok(sheet.checklist.pct === 9.3 && sheet.nextSession === '2026-10-26' && sheet.checklistItems.length === 28, 'sheet data: checklist score and all 28 items');
 const html3 = run(`apiSessionSheetHtml('${c3.session.SessionID}')`);
-ok(html3.includes('ي-٠١') && html3.includes('كل يوم قبل النوم') && html3.includes('تشيك ليست الروتينات') && html3.includes('عدد الأيام المكتوبة من ٧'), 'routines with code, «إمتى وفين» and the library indicator');
+ok(!/[يش]-[٠-٩]|أ[سب]-[٠-٩]|TEST-|PRJ-|RM-|-S0\d/.test(html3) && html3.includes('كل يوم قبل النوم') && html3.includes('تشيك ليست الروتينات') && html3.includes('عدد الأيام المكتوبة من ٧'), 'routines show «إمتى وفين» and the library indicator, and no internal codes or IDs anywhere on the sheet');
 ok(html3.includes('>طباعة<') && !run(`apiSessionSheetHtml('${c3.session.SessionID}', true)`).includes('>طباعة<'), 'print button on screen only, not in the Drive PDF');
 // a session with library tasks: every step, every check question and every library field is printed in full
 const c4 = run(`apiStartSession('${pA.ProjectID}','','2026-10-26')`);

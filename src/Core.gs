@@ -174,7 +174,7 @@ function apiCreateProject(p) {
   return DB.withLock(function () {
     var all = DB.all('DB_Projects');
     var dup = all.filter(function (x) { return str_(x.ProjectName) === str_(p.ProjectName) && str_(x.OwnerName) === str_(p.OwnerName); });
-    if (dup.length) throw AppError('يوجد مشروع بنفس الاسم وصاحب المشروع: ' + dup[0].ProjectID);
+    if (dup.length) throw AppError('يوجد مشروع بنفس الاسم وصاحب المشروع بالفعل');
     var isTest = p.DataType === C.TEST;
     var gen = nextId_('DB_Projects', 'ProjectID', isTest ? 'TEST-PRJ-' : 'PRJ-', 4);
     var row = { ProjectID: gen(), ProjectName: str_(p.ProjectName), OwnerName: str_(p.OwnerName), Phone: str_(p.Phone),
@@ -222,7 +222,7 @@ function routineStability_(ra, occs) {
 function apiGetJourney(projectId) {
   var L = lib_();
   var p = DB.all('DB_Projects').filter(function (x) { return x.ProjectID === projectId; })[0];
-  if (!p) throw AppError('المشروع غير موجود: ' + projectId);
+  if (!p) throw AppError('المشروع غير موجود');
   var mentors = index_(DB.all('DB_Mentors'), 'MentorID');
   var sessions = DB.all('DB_Sessions').filter(function (s) { return s.ProjectID === projectId; }).sort(function (a, b) { return a.SessionNo - b.SessionNo; });
   var asg = DB.all('DB_TaskAssignments').filter(function (a) { return a.ProjectID === projectId; });
@@ -497,7 +497,7 @@ function validateFinalize_(ctx, P) {
   (P.newTasks || []).forEach(function (t) {
     var act = L.action[t.TaskID];
     if (t.TaskID === 'CUSTOM') { if (!str_(t.TaskName)) errs.push('اكتب اسم المهمة المخصصة'); if (!str_(t.CustomInstructions)) errs.push('اكتب خطوات تنفيذ المهمة المخصصة «' + str_(t.TaskName) + '»'); }
-    else if (!act) { errs.push('مهمة غير معروفة: ' + t.TaskID); return; }
+    else if (!act) { errs.push('مهمة غير موجودة في المكتبة (ممكن تكون اتشالت) — شيلها واختار غيرها'); return; }
     var nm = '«' + (act ? act.TaskName : t.TaskName) + '»';
     if (t.TaskID !== 'CUSTOM') {
       if (seen[t.TaskID]) errs.push('المهمة مكررة في الخطة: ' + nm);
@@ -518,9 +518,9 @@ function validateFinalize_(ctx, P) {
   var seenR = {};
   (P.newRoutines || []).forEach(function (r) {
     var lr = L.routine[r.RoutineID];
-    if (!lr) { errs.push('روتين غير معروف: ' + r.RoutineID); return; }
+    if (!lr) { errs.push('روتين غير موجود في المكتبة (ممكن يكون اتشال) — شيله واختار غيره'); return; }
     if (lr.IsRoadmap && !ctx.isRoadmap) errs.push('مكتبة خريطة الطريق متاحة لمشروعات ' + roadmapGovs_().join('، ') + ' فقط: «' + lr.RoutineName + '»');
-    if (lr.IsRoadmap && !str_(r.WhenWhere)) errs.push('اكتب «إمتى وفين» لروتين ' + lr.Code + ' «' + lr.RoutineName + '»');
+    if (lr.IsRoadmap && !str_(r.WhenWhere)) errs.push('اكتب «إمتى وفين» لروتين «' + lr.RoutineName + '»');
     if (seenR[r.RoutineID]) errs.push('الروتين مكرر: «' + lr.RoutineName + '»');
     seenR[r.RoutineID] = 1;
     if (activeAfter[r.RoutineID]) errs.push('الروتين «' + lr.RoutineName + '» مسند بالفعل لهذا المشروع؛ عدّله أو أعد تفعيله بدل تكراره');
@@ -530,14 +530,14 @@ function validateFinalize_(ctx, P) {
   else if (rd <= 2 && (P.newTasks || []).length > 1 && !str_(P.workloadNote)) errs.push('الاستعداد منخفض: قلّل المهام أو اكتب سبب الإبقاء عليها');
   if (!isDate_(P.planEnd) || P.planEnd <= P.sessionDate) errs.push('حدد موعد الجلسة التالية بعد تاريخ هذه الجلسة');
   if (!simple && !ctx.isFirstSession && !str_(P.businessResultNote)) errs.push('اكتب النتيجة الفعلية للأعمال منذ الجلسة السابقة (حتى لو: لا تغيير بعد)');
-  (P.kpiValues || []).forEach(function (k) { if (!L.kpi[k.KPIID]) errs.push('مؤشر غير معروف: ' + k.KPIID); else if (num_(k.Value) === null) errs.push('قيمة غير رقمية للمؤشر «' + L.kpi[k.KPIID].KPIName + '»'); });
+  (P.kpiValues || []).forEach(function (k) { if (!L.kpi[k.KPIID]) errs.push('رقم متابعة غير موجود في المكتبة — شيله'); else if (num_(k.Value) === null) errs.push('قيمة غير رقمية للمؤشر «' + L.kpi[k.KPIID].KPIName + '»'); });
   if (ctx.isRoadmap) {
     var mode = str_(P.projectMode) || str_(ctx.project.ProjectMode);
     if (C.MODES.indexOf(mode) < 0) errs.push('حدد نوع المشروع: بينتج / بيشتري ويبيع / الاتنين (لتشيك ليست الروتينات)');
     var cl = index_(P.checklist || [], 'ItemID');
     var missing = ctx.checklistItems.filter(function (it) { return C.CL_VALUES.indexOf((cl[it.ItemID] || {}).Value) < 0; });
     if (missing.length) errs.push('قيّم كل بنود تشيك ليست الروتينات (ناقص ' + missing.length + ' من ' + ctx.checklistItems.length + '): ' + missing.slice(0, 3).map(function (it) { return '«' + it.RoutineText + '»'; }).join('، ') + (missing.length > 3 ? '…' : ''));
-    (P.checklist || []).forEach(function (c) { if (!L.checkItem[c.ItemID]) errs.push('بند غير معروف في التشيك ليست: ' + c.ItemID); });
+    (P.checklist || []).forEach(function (c) { if (!L.checkItem[c.ItemID]) errs.push('بند في التشيك ليست مش موجود في المكتبة — حدّث الصفحة'); });
   } else if ((P.checklist || []).length) errs.push('تشيك ليست الروتينات خاصة بمشروعات ' + roadmapGovs_().join('، '));
   return errs;
 }
@@ -860,7 +860,7 @@ function apiPlanHtml(sessionId) {
     if (!P.routines[k].length) return;
     o.push('<div class="kv" style="margin-top:8px"><b>' + groupNames[k] + ':</b></div>');
     P.routines[k].forEach(function (r) {
-      o.push('<div class="card"><h3>' + (r.Code ? '<span class="tag">' + esc_(r.Code) + '</span> ' : '') + esc_(r.RoutineName) + (r.IsNew ? '<span class="tag">جديد</span>' : '') + '<span class="tag">' + esc_(r.Frequency) + '</span></h3>');
+      o.push('<div class="card"><h3>' + esc_(r.RoutineName) + (r.IsNew ? '<span class="tag">جديد</span>' : '') + '<span class="tag">' + esc_(r.Frequency) + '</span></h3>');
       if (r.Summary) o.push('<div class="eg">' + esc_(r.Summary) + '</div>');
       if (r.WhenWhere) o.push('<div class="kv"><b>إمتى وفين:</b> ' + esc_(r.WhenWhere) + '</div>');
       if (r.Indicator) o.push('<div class="kv"><b>هنتابعه بـ:</b> ' + esc_(r.Indicator) + '</div>');
@@ -901,7 +901,7 @@ function apiPlanText(sessionId) {
   var names = { DAILY: 'كل يوم', WEEKLY: 'كل أسبوع', BIWEEKLY: 'كل أسبوعين', MONTHLY: 'كل شهر', PERIODIC: 'عند الحاجة' };
   var any = false;
   ['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'PERIODIC'].forEach(function (k) { if (P.routines[k].length) { if (!any) { o.push(''); o.push('*📅 الروتين:*'); any = true; }
-    o.push(names[k] + ': ' + P.routines[k].map(function (r) { return (r.Code ? r.Code + ' ' : '') + r.RoutineName + (r.WhenWhere ? ' (' + r.WhenWhere + ')' : ''); }).join('، ')); } });
+    o.push(names[k] + ': ' + P.routines[k].map(function (r) { return r.RoutineName + (r.WhenWhere ? ' (' + r.WhenWhere + ')' : ''); }).join('، ')); } });
   if (P.checklist && P.checklist.pct !== null) { o.push(''); o.push('📋 تشيك ليست الروتينات: ' + P.checklist.pct + '%' + (P.checklist.firstSessionNo !== h.SessionNo && P.checklist.firstPct !== null ? ' (أول جلسة ' + P.checklist.firstPct + '%)' : '')); }
   o.push(''); o.push('📌 الجلسة الجاية: ' + P.nextSession + ' — هات الأدلة والأرقام معاك.');
   return o.join('\n');
@@ -1031,7 +1031,7 @@ function apiSessionSheetHtml(sessionId, forPdf) {
   if (!rc) o.push('<div class="mut">مفيش روتين.</div>');
   ['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'PERIODIC'].forEach(function (k) { P.routines[k].forEach(function (r) {
     var n = k === 'DAILY' ? 7 : 1, days = ''; for (var d = 0; d < n; d++) days += '<span class="cb"></span>';
-    var b = '<div class="task"><h3>' + (r.Code ? esc_(r.Code) + ' — ' : '') + esc_(r.RoutineName) + ' <span class="mut" style="font-weight:400">(' + names[k] + (r.IsNew ? '، جديد' : '') + ')</span></h3>' +
+    var b = '<div class="task"><h3>' + esc_(r.RoutineName) + ' <span class="mut" style="font-weight:400">(' + names[k] + (r.IsNew ? '، جديد' : '') + ')</span></h3>' +
       '<div class="kv"><span class="lbl">علّم كل مرة تعملها:</span> <span class="days">' + days + '</span></div>';
     b += kv('إمتى وفين', r.WhenWhere) + kv('ليه', r.Purpose) + (r.Summary && r.Summary !== r.Purpose ? '<div class="eg">' + esc_(r.Summary) + '</div>' : '') + kv('إمتى تتعمل', r.WhenToDo) + kv('إزاي باختصار', r.Mechanism);
     if (r.Steps.length) b += '<div class="kv"><span class="lbl">الخطوات:</span></div>' + steps(r.Steps);

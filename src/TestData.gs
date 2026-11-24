@@ -18,9 +18,15 @@ function testFill_(ctx, spec) {
       var ch = pat.charAt(i++ % pat.length);
       return { DueDate: s.DueDate, PeriodLabel: s.PeriodLabel, Status: ch === '1' ? C.OCC_DONE : ch === 'p' ? C.OCC_PART : ch === 'n' ? C.OCC_NA : C.OCC_MISS };
     });
-    return { RAID: r.RAID, occurrences: occ, Decision: rs.Decision || C.R_CONT, Note: rs.Note || '', EvidenceLink: rs.EvidenceLink || '', NewNote: rs.NewNote || '' };
+    return { RAID: r.RAID, occurrences: occ, Decision: rs.Decision || C.R_CONT, Note: rs.Note || '', EvidenceLink: rs.EvidenceLink || '', NewNote: rs.NewNote || '',
+      EvidenceSeen: rs.EvidenceSeen || (r.IsRoadmap ? C.YES : '') };
   });
-  return Object.assign({}, spec.payload, { reviews: reviews, routineReviews: routineReviews });
+  var out = Object.assign({}, spec.payload, { reviews: reviews, routineReviews: routineReviews });
+  if (ctx.isRoadmap) {   // checklist spec: one char per item — d بيعملها · s ساعات · n لأ · - مش بيخصه
+    var code = { d: C.CL_DOES, s: C.CL_SOME, n: C.CL_NO, '-': C.CL_NA }, pat = spec.checklist || '';
+    out.checklist = ctx.checklistItems.map(function (it, i) { return { ItemID: it.ItemID, Value: code[pat.charAt(i)] || C.CL_NO }; });
+  }
+  return out;
 }
 
 function testScenarios_() {
@@ -71,9 +77,10 @@ function testScenarios_() {
             readiness: 4 } }
       ] },
     { project: { ProjectName: 'مزرعة الخير لإنتاج البيض (تجريبي)', OwnerName: 'حسن عبد الله (تجريبي)', Phone: '01000000002', BusinessType: 'دواجن وبيض',
-        Governorate: 'أسيوط', Location: 'أبنوب', Round: 'دورة تجريبية 2026', StartDate: '2026-10-01', Description: '1200 دجاجة بياضة؛ لا يعرف تكلفة الكرتونة ولا هل يكسب.' },
+        Governorate: 'أسيوط', Location: 'أبنوب', Round: 'دورة تجريبية 2026', StartDate: '2026-10-01', Description: '1200 دجاجة بياضة؛ لا يعرف تكلفة الكرتونة ولا هل يكسب.',
+        ProjectMode: C.MODE_PRODUCE },
       sessions: [
-        { date: '2026-10-06', payload: { planEnd: '2026-10-13',
+        { date: '2026-10-06', checklist: 'snnnnnnn' + 'd-nss-nns' + 'dnnnsnn' + 'nnnn', payload: { planEnd: '2026-10-13', afterTrainingDay: '١ الفلوس',
             diagnosis: { ProblemID: 'P-FN02', causes: [
               { CauseID: 'C-FN02-2', Classification: C.DIAG_CONF, EvidenceNote: 'لا يحسب النفوق والبيض المكسور ولا الكراتين.' },
               { CauseID: 'C-FN02-4', Classification: C.DIAG_CONF, EvidenceNote: 'يحسب العلف بسعر الشهر الماضي.' },
@@ -83,7 +90,7 @@ function testScenarios_() {
             newRoutines: [{ RoutineID: 'R-FN01' }, { RoutineID: 'R-FN02', CustomNote: 'سجّل شكاير العلف والأدوية يومًا بيوم.' }],
             kpiValues: [{ KPIID: 'K10', Value: 15200, Source: 'تقدير صاحب المشروع' }, { KPIID: 'K11', Value: 13900, Source: 'تقدير صاحب المشروع' }],
             readiness: 4 } },
-        { date: '2026-10-13', reviews: {
+        { date: '2026-10-13', checklist: 'dsnnsnnn' + 'd-nsd-sns' + 'dnnnsnn' + 'snnn', reviews: {
             'FN-A04': { Status: C.ST_DONE, ImplementationNote: 'حسب العلف والأدوية والكراتين والعمالة والنفوق والمكسور لأسبوع.', Metrics: { 'تكلفة الوحدة المحسوبة (جنيه)': 78, 'سعر البيع الحالي (جنيه)': 85 },
               ActualResult: 'تكلفة الكرتونة 78 جنيه مقابل سعر بيع 85 — الهامش حوالي 8%', AfterValue: 78, EvidenceType: 'مستند', EvidenceLink: 'https://drive.google.com/test-evidence-fn-a04', Decision: C.DEC_DONE } },
           routines: { 'R-FN01': { pattern: '1101' }, 'R-FN02': { pattern: '1001' } },

@@ -77,6 +77,17 @@ function setupSystem() {
   var report = [];
   LIB_TABLES.forEach(function (t) {
     var sh = ss.getSheetByName(t);
+    if (!sh && typeof ROADMAP_SEED !== 'undefined' && ROADMAP_SEED[t]) {   // roadmap library: created once from the seed, then edited in the sheet
+      var keys = SCHEMA[t], rows = ROADMAP_SEED[t];
+      sh = ss.insertSheet(t);
+      sh.getRange(1, 1, 1, keys.length).setValues([SCHEMA_LABELS[t]]).setFontWeight('bold').setBackground('#145a63').setFontColor('#ffffff');
+      sh.getRange(2, 1, 1, keys.length).setValues([keys]).setFontColor('#8a9599').setFontSize(8);
+      sh.getRange(3, 1, sh.getMaxRows() - 2, keys.length).setNumberFormat('@');
+      sh.getRange(3, 1, rows.length, keys.length).setValues(rows.map(function (r) { return keys.map(function (k) { return r[k] === undefined ? '' : r[k]; }); }));
+      sh.setFrozenRows(2); sh.setRightToLeft(true);
+      report.push('➕ أنشئت ورقة ' + t + ' (' + rows.length + ' صف من مكتبة خريطة الطريق)');
+      return;
+    }
     if (!sh) report.push('⚠ ورقة المكتبة مفقودة: ' + t + ' (استورد ملف Athar_Mentoring_System.xlsx كاملًا)');
     else report.push('✓ ' + t + ': ' + Math.max(0, sh.getLastRow() - 2) + ' صف');
   });

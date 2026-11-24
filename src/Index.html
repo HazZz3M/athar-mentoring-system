@@ -122,7 +122,19 @@ function spark(vals){vals=(vals||[]).map(Number).filter(function(v){return !isNa
 function indexLib(lib){var L={};Object.keys(lib).forEach(function(k){L[k]=lib[k]});
   L.area=idx(lib.LIB_Areas,'AreaID');L.problem=idx(lib.LIB_Problems,'ProblemID');L.cause=idx(lib.LIB_Causes,'CauseID');L.strategy=idx(lib.LIB_Strategies,'StrategyID');
   L.action=idx(lib.LIB_Actions,'TaskID');L.routine=idx(lib.LIB_Routines,'RoutineID');L.kpi=idx(lib.LIB_KPIs,'KPIID');L.steps=grp(lib.LIB_ActionSteps,'TaskID');L.rsteps=grp(lib.LIB_RoutineSteps,'RoutineID');
-  L.lists={};(lib.LIB_Lists||[]).forEach(function(r){(L.lists[r.ListName]=L.lists[r.ListName]||[]).push(r.Value)});return L;}
+  L.lists={};(lib.LIB_Lists||[]).forEach(function(r){(L.lists[r.ListName]=L.lists[r.ListName]||[]).push(r.Value)});
+  L.roadmapList=(lib.LIB_RoadmapTasks||[]).filter(function(r){return r.RoadmapID&&r.Active!=='لا'});L.roadmap=idx(L.roadmapList,'RoadmapID');
+  L.checklist=(lib.LIB_RoadmapChecklist||[]).filter(function(r){return r.ItemID}).sort(function(a,b){return (+a.SortOrder||0)-(+b.SortOrder||0)});L.checkItem=idx(L.checklist,'ItemID');
+  L.roadmapList.forEach(function(t){if(!L.routine[t.RoadmapID])L.routine[t.RoadmapID]={RoutineID:t.RoadmapID,AreaID:t.AreaID,RoutineName:t.TaskText,Purpose:t.ExpectedResult,RoutineType:'مهمة خريطة الطريق',
+    FrequencyCode:t.FrequencyCode,FrequencyText:t.FrequencyText,Responsible:'صاحب المشروع',SummaryEg:t.ExpectedResult,Evidence:t.Indicator,Code:t.Code,Domain:t.Domain,ProgramDay:t.ProgramDay,AppliesTo:t.AppliesTo,IsRoadmap:true}});
+  return L;}
+/* ---- Assiut roadmap helpers (same rules as Core.gs) */
+function normAr(s){return String(s||'').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').replace(/\s+/g,' ').trim();}
+function isRoadmapP(p){var g=normAr(p&&p.Governorate);return !!g&&((S.boot.constants.roadmapGovs)||[]).some(function(x){return normAr(x)===g});}
+function appliesMode(a,mode){a=String(a||'');if(!a||a==='كل المشاريع'||!mode||mode==='الاتنين')return true;if(a.indexOf('بينتج')>=0)return mode==='بينتج';if(a.indexOf('بيشتري')>=0)return mode==='بيشتري ويبيع';return true;}
+var CL_SCORE={'بيعملها':2,'ساعات':1,'لأ':0};
+function clScore(vals){var sc=vals.filter(function(v){return CL_SCORE[v]!==undefined});var sum=sc.reduce(function(a,v){return a+CL_SCORE[v]},0);return {pct:sc.length?Math.round(sum/(2*sc.length)*1000)/10:null,n:sc.length};}
+function clTag(v){var c={'بيعملها':'ok','ساعات':'warn','لأ':'bad','مش بيخصه':'gray'}[v]||'gray';return v?'<span class="tag '+c+'">'+esc(v)+'</span>':'';}
 function init(){
   run(call('bootstrap'),'تحميل المكتبة…').then(function(b){S.boot=b;S.L=indexLib(b.library);
     var sel=document.getElementById('mentorSel');sel.innerHTML='<option value="">كل المنتورين</option>'+b.mentors.map(function(m){return '<option value="'+esc(m.MentorID)+'">'+esc(m.MentorName)+(m.DataType==='تجريبي'?' (تجريبي)':'')+'</option>'}).join('');
@@ -156,12 +168,13 @@ function newProjectForm(){var types=S.L.lists['أنواع المشروعات']||
   fld('اسم المشروع','np_ProjectName','',1)+fld('اسم صاحب المشروع','np_OwnerName','',1)+fld('الهاتف','np_Phone','')+
   '<div><label class="f req">نوع النشاط</label><select id="np_BusinessType"><option value=""></option>'+types.map(function(t){return '<option>'+esc(t)+'</option>'}).join('')+'</select></div>'+
   fld('المحافظة','np_Governorate','')+fld('المركز / القرية','np_Location','')+fld('دورة البرنامج','np_Round','')+
+  '<div><label class="f">نوع المشروع (لتشيك ليست أسيوط)</label><select id="np_ProjectMode"><option value=""></option>'+(S.boot.constants.modes||[]).map(function(m){return '<option>'+esc(m)+'</option>'}).join('')+'</select></div>'+
   '<div><label class="f req">المنتور المسؤول</label><select id="np_MentorID">'+ms.map(function(m){return '<option value="'+esc(m.MentorID)+'"'+(m.MentorID===S.mentorId?' selected':'')+'>'+esc(m.MentorName)+'</option>'}).join('')+'</select></div>'+
   '<div><label class="f">تاريخ البدء</label><input type="date" id="np_StartDate" value="'+S.boot.today+'"></div></div>'+
   '<label class="f">وصف مختصر للنشاط</label><textarea id="np_Description"></textarea>'+
   '<div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn sec" data-act="closeModal">إلغاء</button><button class="btn" data-act="saveProject">حفظ المشروع</button></div>');}
 function fld(l,id,v,req){return '<div><label class="f'+(req?' req':'')+'">'+l+'</label><input type="text" id="'+id+'" value="'+esc(v)+'"></div>';}
-function saveProject(){var p={};['ProjectName','OwnerName','Phone','BusinessType','Governorate','Location','Round','MentorID','StartDate','Description'].forEach(function(k){p[k]=document.getElementById('np_'+k).value});
+function saveProject(){var p={};['ProjectName','OwnerName','Phone','BusinessType','Governorate','Location','Round','MentorID','StartDate','Description','ProjectMode'].forEach(function(k){p[k]=document.getElementById('np_'+k).value});
   run(call('createProject',p),'حفظ…').then(function(r){closeModal();toast('تم إنشاء المشروع '+r.ProjectID);openProject(r.ProjectID);});}
 
 /* ============================================================ journey */
@@ -180,9 +193,11 @@ function vJourney(){var j=S.journey,p=j.project,st=j.stats;var draft=j.sessions.
   h+='</div>';
   var rr=st.routinePlanned?Math.round(st.routineDone/st.routinePlanned*100):null;
   h+='<div class="tiles">'+tile(st.sessions,'جلسات محفوظة')+tile(st.assigned,'مهام أسندت')+tile(st.completed,'أنجزت','ok')+tile(st.partial,'جزئية','warn')+tile(st.notDone,'لم تنفذ/متعثرة','bad')+
-    tile(st.inProgress,'قيد التنفيذ')+tile(st.carried,'رُحلت','warn')+tile(st.open,'مفتوحة الآن')+tile(st.routinesActive,'روتينات نشطة')+tile(rr===null?'—':rr+'%','الالتزام بالروتين')+'</div>';
-  h+='<div class="row" style="margin:12px 0 4px">'+['journey|رحلة المشروع في المنتورينج','routines|الروتينات المستمرة','kpis|مؤشرات الأداء'].map(function(x){var a=x.split('|');return '<span class="chip '+(S.jtab===a[0]?'on':'')+'" data-act="jtab" data-v="'+a[0]+'">'+a[1]+'</span>'}).join('')+'</div>';
-  if(S.jtab==='journey')h+=vJourneyTab();else if(S.jtab==='routines')h+=vRoutinesTab();else h+=vKpiTab();
+    tile(st.inProgress,'قيد التنفيذ')+tile(st.carried,'رُحلت','warn')+tile(st.open,'مفتوحة الآن')+tile(st.routinesActive,'روتينات نشطة')+tile(rr===null?'—':rr+'%','الالتزام بالروتين');
+  var ch=(j.checklist||{}).history||[];if(p.IsRoadmap){var f0=ch[0],l0=ch[ch.length-1];h+=tile(l0&&l0.pct!==null?l0.pct+'%':'—','تشيك ليست (آخر جلسة)'+(f0&&f0!==l0&&f0.pct!==null?' — أول جلسة '+f0.pct+'%':''),'acc')+tile(st.stableRoutines||0,'روتينات ثابتة','ok');}
+  h+='</div>';
+  h+='<div class="row" style="margin:12px 0 4px">'+['journey|رحلة المشروع في المنتورينج','routines|الروتينات المستمرة','kpis|مؤشرات الأداء'].concat(p.IsRoadmap?['checklist|تشيك ليست الروتينات']:[]).map(function(x){var a=x.split('|');return '<span class="chip '+(S.jtab===a[0]?'on':'')+'" data-act="jtab" data-v="'+a[0]+'">'+a[1]+'</span>'}).join('')+'</div>';
+  if(S.jtab==='journey')h+=vJourneyTab();else if(S.jtab==='routines')h+=vRoutinesTab();else if(S.jtab==='checklist')h+=vChecklistTab();else h+=vKpiTab();
   return h;}
 function tile(n,l,c){return '<div class="tile '+(c||'')+'"><div class="n">'+(typeof n==='number'?fmtN(n):esc(n))+'</div><div class="l">'+esc(l)+'</div></div>';}
 function journeyRows(){var j=S.journey,f=S.jf,q=f.q.trim();var rows=[];
@@ -222,9 +237,14 @@ function jRow(x){if(x.kind==='routine'){var r=x.r;return '<tr><td><b>'+esc(r.Rou
     '<div style="margin-top:6px"><b>التعليمات كما أُسندت:</b><div style="white-space:pre-wrap" class="sm">'+esc(a.StepsSnapshot||a.CustomInstructions)+'</div></div>'+(a.CustomInstructions?'<div><b>تخصيص المنتور:</b> '+esc(a.CustomInstructions)+'</div>':'')+(a.OffStrategyReason?'<div><b>مبرر الإسناد:</b> '+esc(a.OffStrategyReason)+'</div>':'')+'</div></td></tr>';
   return h;}
 function occDot(o){var c={'تم':'d','جزئي':'p','لم يتم':'m','غير مستحق/إجازة':'n'}[o.Status]||'';return '<span class="dot '+c+'" title="'+esc(o.PeriodLabel+' — '+o.Status)+'"></span>';}
+function vChecklistTab(){var j=S.journey,ch=j.checklist.history,L=S.L;if(!ch.length)return '<div class="card mut">لسه مفيش تقييم لتشيك ليست الروتينات. بيتعمل في خطوة 3 من كل جلسة.</div>';
+  var bySes={};j.sessions.forEach(function(s){bySes[s.SessionID]=idx(s.checklist||[],'ItemID')});
+  var h='<div class="card"><h3>تطور الدرجة</h3><div class="row">'+ch.map(function(x){return '<div class="tile"><div class="n">'+(x.pct===null?'—':x.pct+'%')+'</div><div class="l">جلسة '+x.SessionNo+' · '+esc(x.SessionDate)+'</div><div class="sm mut">بيعملها '+x.does+' · ساعات '+x.some+' · لأ '+x.no+'</div></div>'}).join('')+'</div></div>';
+  h+='<div class="tbl"><table class="t"><tr><th>الروتين</th>'+ch.map(function(x){return '<th>ج'+x.SessionNo+'</th>'}).join('')+'</tr>'+L.checklist.map(function(it){return '<tr><td><b>'+esc(it.RoutineText)+'</b><div class="sm mut">'+esc(it.Domain)+' · '+esc(it.FrequencyText)+'</div></td>'+ch.map(function(x){var c=(bySes[x.SessionID]||{})[it.ItemID];return '<td>'+clTag(c&&c.Value)+(c&&c.Note?'<div class="sm mut">'+esc(c.Note)+'</div>':'')+'</td>'}).join('')+'</tr>'}).join('')+'</table></div>';
+  return h;}
 function vRoutinesTab(){var rs=S.journey.routines;if(!rs.length)return '<div class="card mut">لا توجد روتينات مسندة.</div>';
   return '<div class="tbl"><table class="t"><tr><th>الروتين</th><th>النوع</th><th>التكرار</th><th>البدء</th><th>الحالة</th><th>الالتزام</th><th>آخر 30 مرة</th><th>ملاحظة</th></tr>'+rs.map(function(r){
-    return '<tr><td><b>'+esc(r.RoutineName)+'</b><div class="sm mut">'+esc(r.Purpose)+'</div></td><td><span class="tag acc">'+esc(r.RoutineType)+'</span>'+(r.StrategyName?'<div class="sm">'+esc(r.StrategyName)+'</div>':'')+'</td><td>'+esc(r.FrequencyText)+'</td><td>'+esc(r.StartDate)+'</td><td><span class="tag '+(r.Status==='نشط'?'ok':'gray')+'">'+esc(r.Status)+'</span></td><td>'+r.done+'/'+r.planned+' <b>'+pct(r.rate)+'</b><div class="bar"><i style="width:'+(r.rate||0)+'%"></i></div></td><td><div class="dots">'+r.occurrences.slice(-30).map(occDot).join('')+'</div></td><td class="sm">'+esc(r.CustomNote)+'</td></tr>'}).join('')+'</table></div><div class="sm mut">● أخضر = تم، برتقالي = جزئي، أحمر = لم يتم، منقط = غير مستحق/إجازة. كل مرة مستحقة لها سجل تنفيذ منفصل.</div>';}
+    return '<tr><td>'+(r.Code?'<span class="tag">'+esc(r.Code)+'</span> ':'')+'<b>'+esc(r.RoutineName)+'</b>'+(r.stable?' <span class="tag ok">ثابت ✓</span>':'')+'<div class="sm mut">'+esc(r.Purpose)+(r.WhenWhere?' — إمتى وفين: '+esc(r.WhenWhere):'')+'</div></td><td><span class="tag acc">'+esc(r.RoutineType)+'</span>'+(r.StrategyName?'<div class="sm">'+esc(r.StrategyName)+'</div>':'')+'</td><td>'+esc(r.FrequencyText)+'</td><td>'+esc(r.StartDate)+'</td><td><span class="tag '+(r.Status==='نشط'?'ok':'gray')+'">'+esc(r.Status)+'</span></td><td>'+r.done+'/'+r.planned+' <b>'+pct(r.rate)+'</b><div class="bar"><i style="width:'+(r.rate||0)+'%"></i></div></td><td><div class="dots">'+r.occurrences.slice(-30).map(occDot).join('')+'</div></td><td class="sm">'+esc(r.CustomNote)+'</td></tr>'}).join('')+'</table></div><div class="sm mut">● أخضر = تم، برتقالي = جزئي، أحمر = لم يتم، منقط = غير مستحق/إجازة. كل مرة مستحقة لها سجل تنفيذ منفصل.</div>';}
 function vKpiTab(){var ks=S.journey.kpis;if(!ks.length)return '<div class="card mut">لم تُسجل مؤشرات بعد. تُضاف المؤشرات في خطوة «مراجعة الأداء» داخل الجلسة.</div>';
   var sesNos=[];ks.forEach(function(k){k.values.forEach(function(v){if(sesNos.indexOf(v.SessionNo)<0)sesNos.push(v.SessionNo)})});sesNos.sort(function(a,b){return a-b});
   return '<div class="tbl"><table class="t"><tr><th>المؤشر</th>'+sesNos.map(function(n){return '<th>جلسة '+n+'</th>'}).join('')+'<th>الاتجاه</th><th>التغير من أول قياس</th><th>المستهدف</th></tr>'+ks.map(function(k){var bv=idx(k.values,'SessionNo');
@@ -235,7 +255,7 @@ function vKpiTab(){var ks=S.journey.kpis;if(!ks.length)return '<div class="card 
 /* ============================================================ session */
 function startSession(){var j=S.journey;var draft=j.sessions.filter(function(s){return s.Status==='مسودة'})[0];
   var p=draft?call('getDraft',draft.SessionID):call('startSession',j.project.ProjectID,S.mentorId||j.project.MentorID,S.boot.today);
-  run(p,'تحضير الجلسة واسترجاع المهام السابقة…').then(function(ctx){S.ctx=ctx;S.d=ctx.draft||newDraft(ctx);S.step=S.d.step||1;S.view='session';S.dirty=false;S.openCards={};
+  run(p,'تحضير الجلسة واسترجاع المهام السابقة…').then(function(ctx){S.ctx=ctx;S.d=upgradeDraft(ctx.draft||newDraft(ctx),ctx);S.step=S.d.step||1;S.view='session';S.dirty=false;S.openCards={};
     if(ctx.openAssignments.length)S.openCards['rv_'+ctx.openAssignments[0].AssignmentID]=1;render();window.scrollTo(0,0);});}
 function newDraft(ctx){var prev=ctx.previousSession;var d={step:1,sessionDate:ctx.session.SessionDate,planEnd:addDays(ctx.session.SessionDate,7),reviews:{},routineReviews:{},kpiValues:{},newProjectKPIs:{},
   diagnosis:{AreaID:'',ProblemID:'',ContinuedFocus:false,causes:{}},strategy:{PrimaryStrategyID:'',SupportingStrategyID:'',SupportJustification:''},newTasks:[],newRoutines:[],readiness:'',workloadNote:'',mentorSummary:'',businessResultNote:''};
@@ -243,13 +263,20 @@ function newDraft(ctx){var prev=ctx.previousSession;var d={step:1,sessionDate:ct
   ctx.routines.forEach(function(r){var occ={};r.slots.forEach(function(s){occ[s.DueDate+'#'+s.PeriodLabel]=s.defaultStatus||''});d.routineReviews[r.RAID]={occ:occ,Note:'',EvidenceLink:'',Decision:r.Status==='نشط'?'':'استمرار',NewNote:'',Responsible:''}});
   if(prev&&prev.FocusProblemID){d.diagnosis.AreaID=prev.FocusAreaID;}
   return d;}
+function upgradeDraft(d,ctx){d.checklist=d.checklist||{};if(d.projectMode===undefined)d.projectMode=ctx.project.ProjectMode||'';if(d.afterTrainingDay===undefined)d.afterTrainingDay='';
+  (d.newRoutines||[]).forEach(function(r){if(r.WhenWhere===undefined)r.WhenWhere=''});
+  ctx.routines.forEach(function(r){var rr=d.routineReviews[r.RAID];if(rr&&rr.EvidenceSeen===undefined)rr.EvidenceSeen=''});
+  if(ctx.isRoadmap)applyModeNA(d,ctx);return d;}
+/** Items that do not apply to the project type are «مش بيخصه» automatically; changing the type clears those auto-marks. */
+function applyModeNA(d,ctx){(ctx.checklistItems||[]).forEach(function(it){var c=d.checklist[it.ItemID]=d.checklist[it.ItemID]||{Value:'',Note:''};
+  if(!appliesMode(it.AppliesTo,d.projectMode)){if(!c.Value||c.auto){c.Value='مش بيخصه';c.auto=1;}}else if(c.auto){c.Value='';delete c.auto;}});}
 function saveDraft(silent){if(!S.ctx)return;S.d.step=S.step;var sid=S.ctx.session.SessionID;var p=call('saveDraft',sid,JSON.stringify(S.d)).then(function(r){S.dirty=false;S.lastSaved=r.savedAt;var el=document.getElementById('saveState');if(el)el.textContent='حُفظت المسودة '+r.savedAt.slice(11);if(!silent)toast('تم حفظ المسودة');});
   if(!silent)run(p,'حفظ المسودة…');}
 setInterval(function(){if(S.view==='session'&&S.dirty)saveDraft(true);},45000);
 function vFoot(){return '<div class="foot"><button class="btn sec" data-act="prevStep" '+(S.step===1?'disabled':'')+'>السابق</button><button class="btn" data-act="nextStep" '+(S.step===10?'disabled':'')+'>التالي ←</button>'+
   '<span class="grow sm mut" id="saveState">'+(S.lastSaved?'حُفظت المسودة '+esc(S.lastSaved.slice(11)):'المسودة تُحفظ تلقائيًا')+'</span><button class="btn sm sec" data-act="saveDraft">حفظ المسودة</button><button class="btn sm ghost" data-act="exitSession">خروج</button></div>';}
 function reviewProgress(){var c=S.ctx,d=S.d;var n=c.openAssignments.filter(function(a){var r=d.reviews[a.AssignmentID];return r.Status&&r.Decision}).length;
-  var rn=c.routines.filter(function(r){var rr=d.routineReviews[r.RAID];return rr.Decision&&Object.keys(rr.occ).every(function(k){return rr.occ[k]})}).length;return {done:n,total:c.openAssignments.length,rdone:rn,rtotal:c.routines.length};}
+  var rn=c.routines.filter(function(r){var rr=d.routineReviews[r.RAID];return rr.Decision&&Object.keys(rr.occ).every(function(k){return rr.occ[k]})&&(!r.IsRoadmap||!r.slots.length||rr.EvidenceSeen)}).length;return {done:n,total:c.openAssignments.length,rdone:rn,rtotal:c.routines.length};}
 function stepAllowed(n){if(n<=2)return true;var p=reviewProgress();return p.done===p.total&&p.rdone===p.rtotal;}
 function vSession(){var c=S.ctx,p=c.project;var h='<div class="row"><button class="btn ghost" data-act="backToJourney">→ رحلة المشروع</button><h2 class="grow" style="margin:0">'+esc(p.ProjectName)+' — جلسة '+c.session.SessionNo+' '+(p.DataType==='تجريبي'?'<span class="testflag">تجريبي</span>':'')+'</h2></div>';
   h+='<div class="stepper">'+STEPS.map(function(s,i){var n=i+1;return '<span class="stp '+(n===S.step?'on':'')+(n<S.step?' done':'')+(!stepAllowed(n)?' lock':'')+'" data-act="goStep" data-v="'+n+'">'+n+'. '+s+'</span>'}).join('')+'</div>';
@@ -259,13 +286,16 @@ function ta(path,ph,extra){return '<textarea data-bind="'+path+'" placeholder="'
 function chips(path,opts,cls,multi){var v=getP(S.d,path);return opts.map(function(o){var on=multi?(v||[]).indexOf(o)>=0:v===o;return '<span class="chip '+(cls?cls(o):'')+(on?' on':'')+'" data-act="'+(multi?'mchip':'chip')+'" data-path="'+path+'" data-v="'+esc(o)+'">'+esc(o)+'</span>'}).join('');}
 
 /* ---- step 1 */
+function trainingDays(){var o=[];S.L.roadmapList.forEach(function(t){var d=String(t.ProgramDay||'');if(/^[٠-٩0-9]+ [^و]/.test(d)&&o.indexOf(d)<0)o.push(d)});return o.sort();}
 function st1(){var c=S.ctx,p=c.project,prev=c.previousSession;var h='<div class="card"><h3>1. بيانات الجلسة</h3><div class="grid g3">'+
   '<div><label class="f">رقم الجلسة</label><input type="text" value="'+c.session.SessionNo+'" disabled></div>'+
   '<div><label class="f req">تاريخ الجلسة</label>'+inp('sessionDate','date')+'</div>'+
   '<div><label class="f req">موعد الجلسة القادمة (نهاية الخطة)</label>'+inp('planEnd','date')+'</div>'+
   '<div><label class="f">فترة المراجعة</label><input type="text" value="من '+esc(c.session.ReviewFrom)+' حتى اليوم السابق للجلسة" disabled></div>'+
   '<div><label class="f">المنتور</label><input type="text" value="'+esc((S.boot.mentors.filter(function(m){return m.MentorID===c.session.MentorID})[0]||{}).MentorName||c.session.MentorID)+'" disabled></div>'+
-  '<div><label class="f">صاحب المشروع</label><input type="text" value="'+esc(p.OwnerName)+'" disabled></div></div></div>';
+  '<div><label class="f">صاحب المشروع</label><input type="text" value="'+esc(p.OwnerName)+'" disabled></div>'+
+  (c.isRoadmap?'<div><label class="f">بعد يوم التدريب (خريطة الطريق)</label><select data-bind="afterTrainingDay"><option value=""></option>'+trainingDays().map(function(x){return '<option'+(S.d.afterTrainingDay===x?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select></div>':'')+'</div></div>';
+  if(c.isRoadmap)h+='<div class="box info sm"><b>مشروع أسيوط — خريطة الطريق:</b> هتقيّم «تشيك ليست الروتينات» في خطوة 3، وتقدر تختار من مكتبة الـ145 مهمة في خطوة 7. '+(c.isFirstSession?'الجلسة الأولى = جلسة التشخيص: قول لصاحب المشروع «احكيلي يومك من الصبح» واطلب تشوف الكروت أو الدفتر والموبايل وصور مكان الشغل.':'الجلسة بتمشي على: الالتزام اللي فات، إيه اللي حصل، روتين جديد، تظبيط الروتين، والالتزام.')+'</div>';
   if(prev){h+='<div class="card"><h3>ملخص الجلسة السابقة (رقم '+prev.SessionNo+' — '+esc(prev.SessionDate)+')</h3><div class="kv"><b>المشكلة:</b> '+esc(prev.ProblemName)+'</div><div class="kv"><b>الاستراتيجية:</b> '+esc(prev.StrategyName)+(prev.SupportingStrategyName?' + '+esc(prev.SupportingStrategyName):'')+'</div>'+
     '<div class="kv"><b>عدد المهام الجديدة:</b> '+prev.NewTasksCount+' | <b>المستمرة:</b> '+prev.ContinuingTasksCount+' | <b>الروتينات:</b> '+prev.ActiveRoutinesCount+' | <b>الاستعداد:</b> '+prev.Readiness+'/5</div>'+
     (prev.MentorSummary?'<div class="kv"><b>ملاحظة المنتور:</b> '+esc(prev.MentorSummary)+'</div>':'')+(prev.BusinessResultNote?'<div class="kv"><b>النتيجة المسجلة:</b> '+esc(prev.BusinessResultNote)+'</div>':'')+'</div>';}
@@ -313,10 +343,12 @@ var OCC_CYCLE=['تم','جزئي','لم يتم','غير مستحق/إجازة',''
 function routineCard(r){var rr=S.d.routineReviews[r.RAID],key='rr_'+r.RAID,P='routineReviews|'+r.RAID+'|';var keys=Object.keys(rr.occ);var done=keys.filter(function(k){return rr.occ[k]==='تم'}).length,planned=keys.filter(function(k){return rr.occ[k]&&rr.occ[k]!=='غير مستحق/إجازة'}).length;
   var stratChanged=r.RoutineType==='روتين مرتبط بالاستراتيجية';var h='<div class="card" style="padding:10px"><div class="row"><b class="grow">'+esc(r.RoutineName)+'</b><span class="tag acc">'+esc(r.RoutineType)+'</span><span class="tag gray">'+esc(r.FrequencyText)+'</span><span class="tag '+(r.Status==='نشط'?'ok':'gray')+'">'+esc(r.Status)+'</span><span class="sm">الالتزام التراكمي: '+r.done+'/'+r.planned+' '+pct(r.rate)+'</span></div>';
   if(stratChanged&&r.StrategyName)h+='<div class="sm mut">مرتبط بالاستراتيجية: '+esc(r.StrategyName)+' — راجعه إذا تغيرت الاستراتيجية.</div>';
+  if(r.IsRoadmap)h+='<div class="sm"><span class="tag">'+esc(r.Code)+'</span> '+(r.stable?'<span class="tag ok">ثابت ✓</span> ':'')+(r.WhenWhere?'<b>إمتى وفين:</b> '+esc(r.WhenWhere)+' | ':'')+'<b>المؤشر:</b> '+esc(r.Indicator||'')+'</div>';
   if(r.slots.length){h+='<div class="sm" style="margin:6px 0">اضغط على كل مرة لتغيير حالتها (تم ← جزئي ← لم يتم ← غير مستحق). المنفذ في الفترة: <b>'+done+'/'+planned+'</b></div><div class="row" style="gap:4px">'+r.slots.map(function(s){var k=s.DueDate+'#'+s.PeriodLabel,v=rr.occ[k];return '<span class="slot '+(OCC_CLS[v]||'')+'" data-act="occ" data-ra="'+r.RAID+'" data-k="'+esc(k)+'">'+esc(s.PeriodLabel)+'<br><b>'+esc(v||'؟')+'</b></span>'}).join('')+'</div>'+
     '<div class="row" style="margin-top:4px"><button class="btn sm sec" data-act="occAll" data-ra="'+r.RAID+'" data-v="تم">الكل تم</button><button class="btn sm sec" data-act="occAll" data-ra="'+r.RAID+'" data-v="لم يتم">الكل لم يتم</button></div>';}
   else h+='<div class="sm mut">'+(r.Status==='نشط'?'لا توجد مرات مستحقة في هذه الفترة (بدأ حديثًا).':'الروتين متوقف مؤقتًا — لا توجد مرات مستحقة.')+'</div>';
-  h+='<div class="grid g2"><div><label class="f">ملاحظة</label>'+inp(P+'Note')+'</div><div><label class="f">رابط دليل</label>'+inp(P+'EvidenceLink','url')+'</div></div>';
+  if(r.IsRoadmap&&r.slots.length)h+='<label class="f req">الدليل اتشاف؟ (الروتين يبقى «ثابت» لما يبان دليله في جلستين ورا بعض)</label><div>'+chips(P+'EvidenceSeen',['نعم','لا'])+'</div>';
+  h+='<div class="grid g2"><div><label class="f">'+(r.IsRoadmap?'الدليل اللي اتشاف / ملاحظة':'ملاحظة')+'</label>'+inp(P+'Note')+'</div><div><label class="f">رابط دليل</label>'+inp(P+'EvidenceLink','url')+'</div></div>';
   var decs=r.Status==='نشط'?['استمرار','تعديل','إيقاف مؤقت','إنهاء']:['استمرار','إعادة تفعيل','إنهاء'];
   h+='<label class="f req">القرار</label><div>'+chips(P+'Decision',decs)+(r.Status!=='نشط'?' <span class="sm mut">(استمرار = يبقى متوقفًا)</span>':'')+'</div>';
   if(rr.Decision==='تعديل')h+='<div class="grid g2"><div><label class="f">التعديل / التعليمات الجديدة</label>'+inp(P+'NewNote')+'</div><div><label class="f">المسؤول</label>'+inp(P+'Responsible')+'</div></div>';
@@ -339,9 +371,24 @@ function st3(){var c=S.ctx,d=S.d,j=c.journey,L=S.L;var kmap=idx(j.kpis,'KPIID');
   var avail=L.LIB_KPIs.filter(function(k){return tracked.indexOf(k.KPIID)<0});
   h+='<div class="row" style="margin-top:8px"><select id="addKpi" class="grow" style="width:auto"><option value="">+ إضافة مؤشر…</option>'+(sug.length?'<optgroup label="مقترحة للمشكلة">'+avail.filter(function(k){return sug.indexOf(k.KPIID)>=0}).map(kOpt).join('')+'</optgroup>':'')+
     S.L.LIB_Areas.map(function(a){return '<optgroup label="'+esc(a.AreaName)+'">'+avail.filter(function(k){return k.AreaID===a.AreaID&&sug.indexOf(k.KPIID)<0}).map(kOpt).join('')+'</optgroup>'}).join('')+'</select><button class="btn sm" data-act="addKpi">إضافة</button></div></div>';
+  if(c.isRoadmap)h+=vChecklist();
   h+='<div class="card"><label class="f'+(c.isFirstSession?'':' req')+'">'+(c.isFirstSession?'وصف الوضع الحالي (خط الأساس)':'النتيجة الفعلية للأعمال منذ الجلسة السابقة')+'</label>'+ta('businessResultNote','مثال: الطلبات زادت من 9 إلى 12 بسبب المتابعة؛ المبيعات لم تتغير بعد. اكتب «لا تغيير بعد» إذا لم يتغير شيء.')+'</div>';
   return h;}
 function kOpt(k){return '<option value="'+k.KPIID+'">'+esc(k.KPIName)+' ('+esc(k.Unit)+')</option>';}
+function vChecklist(){var c=S.ctx,d=S.d,items=c.checklistItems,prev=c.previousChecklist||{},hist=c.journey.checklist.history;
+  var vals=items.map(function(it){return (d.checklist[it.ItemID]||{}).Value});var sc=clScore(vals),filled=vals.filter(Boolean).length;
+  var first=hist[0],last=hist[hist.length-1];
+  var h='<div class="card" id="checklist"><div class="row"><h3 class="grow" style="margin:0">📋 تشيك ليست الروتينات <span class="sm mut">(مكتبة أسيوط — كل جلسة)</span></h3><span class="tag '+(filled===items.length?'ok':'warn')+'">'+filled+'/'+items.length+'</span></div>'+
+    '<div class="tiles">'+tile(sc.pct===null?'—':sc.pct+'%','الدرجة دلوقتي',sc.pct===null?'':sc.pct>=70?'ok':sc.pct>=40?'warn':'bad')+(last?tile(last.pct===null?'—':last.pct+'%','الجلسة السابقة ('+last.SessionNo+')'):'')+(first&&first!==last?tile(first.pct===null?'—':first.pct+'%','أول جلسة ('+first.SessionNo+')'):'')+'</div>'+
+    '<div class="sm mut">الدرجة: بيعملها 2، ساعات 1، لأ 0، و«مش بيخصه» ما بتدخلش في الحساب. اسأل واطلب تشوف الدليل — متعتمدش على الكلام بس.</div>'+
+    '<label class="f req">نوع المشروع</label><div>'+(S.boot.constants.modes||[]).map(function(m){return '<span class="chip'+(d.projectMode===m?' on':'')+'" data-act="setMode" data-v="'+esc(m)+'">'+esc(m)+'</span>'}).join('')+' <span class="sm mut">البنود اللي مش لنوع المشروع بتتعلم «مش بيخصه» لوحدها.</span></div>'+
+    (Object.keys(prev).length?'<div class="row" style="margin-top:6px"><button class="btn sm sec" data-act="clCopy">انسخ تقييم الجلسة السابقة في الخانات الفاضية</button></div>':'');
+  var doms=[];items.forEach(function(it){if(doms.indexOf(it.Domain)<0)doms.push(it.Domain)});
+  doms.forEach(function(dm){h+='<h4>'+esc(dm)+'</h4><div class="tbl"><table class="t"><tr><th style="width:34%">الروتين</th><th>المنتور يطلب يشوف</th><th style="width:70px">السابق</th><th style="width:300px">النهارده</th><th style="width:170px">ملاحظة/دليل</th></tr>'+
+    items.filter(function(it){return it.Domain===dm}).map(function(it){var P='checklist|'+it.ItemID+'|',cur=(d.checklist[it.ItemID]||{});var na=!appliesMode(it.AppliesTo,d.projectMode);
+      return '<tr'+(cur.Value?'':' style="background:#fff8e6"')+'><td><b>'+esc(it.RoutineText)+'</b><div class="sm mut">'+esc(it.FrequencyText)+(it.AppliesTo&&it.AppliesTo!=='كل المشاريع'?' · '+esc(it.AppliesTo):'')+'</div></td><td class="sm">'+esc(it.EvidenceToAsk)+'</td><td>'+clTag((prev[it.ItemID]||{}).Value)+'</td><td>'+
+        (na?'<span class="tag gray">مش بيخصه</span> <span class="sm mut">(مش لنوع المشروع)</span>':chips(P+'Value',S.boot.constants.checklistValues||[],function(o){return {'بيعملها':'ok','ساعات':'warn','لأ':'bad'}[o]||''}))+'</td><td>'+inp(P+'Note','text','','style="font-size:12px"')+'</td></tr>'}).join('')+'</table></div>'});
+  return h+'</div>';}
 
 /* ---- step 4: diagnosis */
 function st4(){var d=S.d,L=S.L,D=d.diagnosis,prev=S.ctx.previousSession;var h='<div class="card"><h3>4. تشخيص المشكلة ذات الأولوية الآن</h3>';
@@ -396,17 +443,42 @@ function taskCard(tid,openA,doneA,addedT){var a=S.L.action[tid];if(!a)return '';
 function routineFinal(r){var rr=S.d.routineReviews[r.RAID]||{};var dc=rr.Decision;if(dc==='إنهاء')return 'منتهي';if(dc==='إيقاف مؤقت')return 'متوقف مؤقتًا';if(dc==='إعادة تفعيل')return 'نشط';return r.Status;}
 function st7(){var d=S.d,L=S.L,c=S.ctx,cs=chosenStrats();var active={};c.routines.forEach(function(r){var f=routineFinal(r);if(f!=='منتهي')active[r.RoutineID]=f});var added={};d.newRoutines.forEach(function(r){added[r.RoutineID]=1});
   var h='<div class="card"><h3>7. الروتينات</h3><div class="sm mut">الروتين يُسند مرة واحدة ويستمر بين الجلسات، ويُسجل تنفيذه مرة بمرة. اختر فقط ما يناسب المشروع.</div>';
-  ['روتين أساسي','روتين مرتبط بالاستراتيجية'].forEach(function(tp){var rs=c.routines.filter(function(r){return r.RoutineType===tp});h+='<h4>'+(tp==='روتين أساسي'?'روتينات أساسية مستمرة':'روتينات مرتبطة باستراتيجية')+' ('+rs.length+')</h4>';
-    h+=rs.length?rs.map(function(r){var f=routineFinal(r);var warn=tp!=='روتين أساسي'&&r.StrategyID&&cs.indexOf(r.StrategyID)<0&&f==='نشط';return '<div class="row sm" style="padding:4px 0;border-bottom:1px dashed var(--line)"><span class="grow">'+esc(r.RoutineName)+' <span class="mut">('+esc(r.FrequencyText)+')</span></span><span class="tag '+(f==='نشط'?'ok':'gray')+'">'+esc(f)+'</span>'+(warn?'<span class="tag warn">الاستراتيجية تغيرت — راجع قرار هذا الروتين في الخطوة 2</span>':'')+'</div>'}).join(''):'<div class="sm mut">لا يوجد.</div>';});
-  if(d.newRoutines.length)h+='<h4>روتينات جديدة ستُضاف</h4>'+d.newRoutines.map(function(r,i){var lr=L.routine[r.RoutineID];var P='newRoutines|'+i+'|';return '<div class="card flat" style="padding:8px 10px"><div class="row"><b class="grow">'+esc(lr.RoutineName)+'</b><span class="tag acc">'+esc(lr.RoutineType)+'</span><button class="btn sm danger" data-act="delRoutine" data-i="'+i+'">إزالة</button></div><div class="grid g3"><div><label class="f">تاريخ البدء</label>'+inp(P+'StartDate','date')+'</div><div><label class="f">المسؤول</label>'+inp(P+'Responsible','text',lr.Responsible)+'</div><div><label class="f">تخصيص</label>'+inp(P+'CustomNote')+'</div></div></div>'}).join('');
+  ['روتين أساسي','روتين مرتبط بالاستراتيجية'].concat(c.isRoadmap?['مهمة خريطة الطريق']:[]).forEach(function(tp){var rs=c.routines.filter(function(r){return r.RoutineType===tp});h+='<h4>'+(tp==='روتين أساسي'?'روتينات أساسية مستمرة':tp==='مهمة خريطة الطريق'?'مهام خريطة الطريق المستمرة':'روتينات مرتبطة باستراتيجية')+' ('+rs.length+')</h4>';
+    h+=rs.length?rs.map(function(r){var f=routineFinal(r);var warn=tp!=='روتين أساسي'&&r.StrategyID&&cs.indexOf(r.StrategyID)<0&&f==='نشط';return '<div class="row sm" style="padding:4px 0;border-bottom:1px dashed var(--line)"><span class="grow">'+(r.Code?'<span class="tag">'+esc(r.Code)+'</span> ':'')+esc(r.RoutineName)+' <span class="mut">('+esc(r.FrequencyText)+')</span>'+(r.stable?' <span class="tag ok">ثابت ✓</span>':'')+'</span><span class="tag '+(f==='نشط'?'ok':'gray')+'">'+esc(f)+'</span>'+(warn?'<span class="tag warn">الاستراتيجية تغيرت — راجع قرار هذا الروتين في الخطوة 2</span>':'')+'</div>'}).join(''):'<div class="sm mut">لا يوجد.</div>';});
+  var lim=S.boot.constants.roadmapNewLimit||2;
+  if(c.isRoadmap&&d.newRoutines.length>lim)h+='<div class="box warn sm"><b>تنبيه:</b> قاعدة خريطة الطريق «مفيش أكتر من '+lim+' روتين جداد في الجلسة» — اخترت '+d.newRoutines.length+'. ده تنبيه بس؛ اتأكد إن صاحب المشروع قادر.</div>';
+  if(d.newRoutines.length)h+='<h4>روتينات جديدة ستُضاف</h4>'+d.newRoutines.map(function(r,i){var lr=L.routine[r.RoutineID];var P='newRoutines|'+i+'|';return '<div class="card flat" style="padding:8px 10px"><div class="row"><b class="grow">'+(lr.Code?'<span class="tag">'+esc(lr.Code)+'</span> ':'')+esc(lr.RoutineName)+'</b><span class="tag acc">'+esc(lr.RoutineType)+'</span><span class="tag gray">'+esc(lr.FrequencyText)+'</span><button class="btn sm danger" data-act="delRoutine" data-i="'+i+'">إزالة</button></div>'+
+    (lr.IsRoadmap?'<div class="sm mut">هنتابعه بـ: '+esc(lr.Evidence)+'</div><div class="grid g3"><div><label class="f req">إمتى وفين</label>'+inp(P+'WhenWhere','text','مثال: كل يوم قبل النوم على الترابيزة')+'</div><div><label class="f">تاريخ البدء</label>'+inp(P+'StartDate','date')+'</div><div><label class="f">الالتزام / ملاحظة</label>'+inp(P+'CustomNote','text','اللي صاحب المشروع وعد بيه')+'</div></div>':
+    '<div class="grid g3"><div><label class="f">تاريخ البدء</label>'+inp(P+'StartDate','date')+'</div><div><label class="f">المسؤول</label>'+inp(P+'Responsible','text',lr.Responsible)+'</div><div><label class="f">تخصيص</label>'+inp(P+'CustomNote')+'</div></div>')+'</div>'}).join('');
   h+='</div>';
   var rec=[];cs.forEach(function(sid){ids(L.strategy[sid].RoutineIDs).forEach(function(r){if(rec.indexOf(r)<0)rec.push(r)})});
   var areaOf=d.diagnosis.ProblemID?L.problem[d.diagnosis.ProblemID].AreaID:'';
   var core=L.LIB_Routines.filter(function(r){return r.RoutineType==='روتين أساسي'&&r.AreaID===areaOf&&rec.indexOf(r.RoutineID)<0}).map(function(r){return r.RoutineID});
   var show=function(list,title){var items=list.filter(function(x){return !active[x]&&!added[x]});if(!items.length)return '';return '<h4>'+title+'</h4><div class="grid g2">'+items.map(routineLibCard).join('')+'</div>';};
+  if(c.isRoadmap)h+=vRoadmapPicker(active,added);
   h+=show(rec,'روتينات مقترحة للاستراتيجية المختارة')+show(core,'روتينات أساسية في نفس المجال');
   var key='allR';h+='<div class="acc '+(S.openCards[key]?'open':'')+'"><div class="hd" data-act="toggle" data-v="'+key+'"><span class="caret">◀</span><b>كل مكتبة الروتينات ('+L.LIB_Routines.length+')</b></div>'+(S.openCards[key]?'<div class="bd">'+L.LIB_Areas.map(function(a){var items=L.LIB_Routines.filter(function(r){return r.AreaID===a.AreaID&&!active[r.RoutineID]&&!added[r.RoutineID]});return '<h4>'+esc(a.AreaName)+'</h4><div class="grid g2">'+items.map(function(r){return routineLibCard(r.RoutineID)}).join('')+'</div>'}).join('')+'</div>':'')+'</div>';
   return h;}
+/** Roadmap library (Assiut): suggestions come from checklist items scored «لأ/ساعات» today — money first — then the full filterable library. */
+function vRoadmapPicker(active,added){var d=S.d,L=S.L,f=S.rmf||(S.rmf={freq:'',dom:'',q:''});var mode=d.projectMode;
+  var ok=function(id){var t=L.roadmap[id];return t&&!active[id]&&!added[id]&&appliesMode(t.AppliesTo,mode)};
+  var sug=[],why={};S.ctx.checklistItems.forEach(function(it){var v=(d.checklist[it.ItemID]||{}).Value;if(v!=='لأ'&&v!=='ساعات')return;
+    ids(it.RoadmapIDs).forEach(function(id){if(ok(id)&&sug.indexOf(id)<0){sug.push(id);why[id]='«'+it.RoutineText+'» = '+v}})});
+  var h='<div class="card"><h3>🗺 مكتبة خريطة الطريق — أسيوط ('+L.roadmapList.length+' مهمة)</h3><div class="sm mut">اختار مع صاحب المشروع روتين أو اتنين بس، والأولوية لروتينات الفلوس. كل مهمة بتتابع كروتين (يومي/أسبوعي/كل أسبوعين/شهري) ولازم تكتب «إمتى وفين».</div>';
+  var more=S.openCards.rmMore,shown=more?sug:sug.slice(0,6);
+  h+=sug.length?'<h4>مقترحة من تشيك ليست النهارده ('+sug.length+')</h4><div class="grid g2">'+shown.map(function(id){return rmCard(id,why[id])}).join('')+'</div>'+(sug.length>6?'<button class="btn sm ghost" data-act="toggle" data-v="rmMore">'+(more?'عرض أول 6 بس':'عرض باقي الاقتراحات ('+(sug.length-6)+')')+'</button>':''):'<div class="sm mut" style="margin:6px 0">'+(Object.keys(d.checklist).length?'مفيش اقتراحات: قيّم التشيك ليست في خطوة 3 أو كل البنود المرتبطة متسندة بالفعل.':'قيّم التشيك ليست في خطوة 3 عشان تظهر الاقتراحات.')+'</div>';
+  var key='allRM',open=S.openCards[key];
+  h+='<div class="acc '+(open?'open':'')+'"><div class="hd" data-act="toggle" data-v="'+key+'"><span class="caret">◀</span><b>كل مكتبة خريطة الطريق</b></div>';
+  if(open){var doms=[];L.roadmapList.forEach(function(t){if(doms.indexOf(t.Domain)<0)doms.push(t.Domain)});var q=normAr(f.q);
+    var list=L.roadmapList.filter(function(t){return ok(t.RoadmapID)&&(!f.freq||t.FrequencyCode===f.freq)&&(!f.dom||t.Domain===f.dom)&&(!q||normAr(t.TaskText+' '+t.Code+' '+t.ExpectedResult).indexOf(q)>=0)});
+    h+='<div class="bd"><div class="grid g3"><div><label class="f">التكرار</label><select data-act="rmf" data-k="freq"><option value="">الكل</option>'+[['DAILY','يومي'],['WEEKLY','أسبوعي'],['BIWEEKLY','كل أسبوعين'],['MONTHLY','شهري']].map(function(x){return '<option value="'+x[0]+'"'+(f.freq===x[0]?' selected':'')+'>'+x[1]+'</option>'}).join('')+'</select></div>'+
+      '<div><label class="f">المجال</label><select data-act="rmf" data-k="dom"><option value="">الكل</option>'+doms.map(function(x){return '<option'+(f.dom===x?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select></div>'+
+      '<div><label class="f">بحث</label><input type="text" id="rmq" data-act="rmq" value="'+esc(f.q)+'" placeholder="كلمة أو كود"></div></div><div class="sm mut">'+list.length+' مهمة'+(mode?' مناسبة لمشروع «'+esc(mode)+'»':'')+'</div><div class="grid g2">'+list.slice(0,60).map(function(t){return rmCard(t.RoadmapID)}).join('')+'</div>'+(list.length>60?'<div class="sm mut">ضيّق البحث لعرض الباقي.</div>':'')+'</div>';}
+  return h+'</div></div>';}
+function rmCard(id,why){var t=S.L.roadmap[id];if(!t)return '';
+  return '<div class="card" style="margin:0"><div><span class="tag">'+esc(t.Code)+'</span> <span class="tag gray">'+esc(t.FrequencyText)+'</span></div><div class="b" style="margin:4px 0">'+esc(t.TaskText)+'</div>'+
+    '<div class="sm"><b>النتيجة:</b> '+esc(t.ExpectedResult)+'</div><div class="sm"><b>المؤشر:</b> '+esc(t.Indicator)+'</div><div class="sm mut">'+esc(t.Domain)+' · يوم '+esc(t.ProgramDay)+(t.AppliesTo!=='كل المشاريع'?' · '+esc(t.AppliesTo):'')+(t.Origin==='جديد'?' · <b>جديدة</b>':'')+'</div>'+
+    (why?'<div class="sm" style="color:var(--acc)">مقترحة لأن: '+esc(why)+'</div>':'')+'<div class="row"><span class="grow"></span><button class="btn sm" data-act="addRoutine" data-v="'+esc(id)+'">+ إضافة</button></div></div>';}
 function routineLibCard(rid){var r=S.L.routine[rid];if(!r)return '';var key='rl_'+rid,open=S.openCards[key];return '<div class="card" style="margin:0"><div class="row"><b class="grow">'+esc(r.RoutineName)+'</b><span class="tag acc">'+esc(r.RoutineType)+'</span><span class="tag gray">'+esc(r.FrequencyText)+'</span></div><div class="sm">'+esc(r.Purpose)+'</div><div class="eg sm">'+esc(r.SummaryEg)+'</div><div class="sm mut">الملاءمة: '+esc(r.Applicability)+'</div>'+
   (open?'<ol class="steps sm">'+(S.L.rsteps[rid]||[]).map(function(s){return '<li><b>'+esc(s.StepTitle)+':</b> '+esc(s.Instruction)+'</li>'}).join('')+'</ol><div class="sm"><b>بديل ورقي:</b> '+esc(r.PaperAlternative)+'</div>':'')+
   '<div class="row"><button class="btn sm ghost" data-act="toggle" data-v="'+key+'">'+(open?'إخفاء':'الخطوات')+'</button><span class="grow"></span><button class="btn sm" data-act="addRoutine" data-v="'+rid+'">+ إضافة</button></div></div>';}
@@ -430,13 +502,19 @@ function st9(){var d=S.d,L=S.L,c=S.ctx;var h='<div class="card"><h3>9. المر�
   var subs=[];c.openAssignments.forEach(function(a){var r=d.reviews[a.AssignmentID];if(r.Decision==='تقسيم لمهام أصغر')(r.SubTasks||[]).forEach(function(s){if(s.name)subs.push(s.name+' ← '+(s.deadline||''))})});if(subs.length)h+='<div class="sm"><b>مهام أصغر من تقسيم مهام سابقة:</b> '+subs.map(esc).join(' | ')+'</div>';
   h+='</div><div class="card"><h4>2) مهام سابقة مستمرة بقرار المنتور</h4>'+c.openAssignments.map(function(a){var r=d.reviews[a.AssignmentID];if(['تم الإنجاز','إلغاء لعدم الملاءمة','تقسيم لمهام أصغر'].indexOf(r.Decision)>=0)return '';return '<div class="row sm" style="border-bottom:1px dashed var(--line);padding:4px 0"><span class="grow">'+esc(a.TaskName)+'</span>'+statusTag(r.Status)+decTag(r.Decision)+'<span>'+esc(r.NewDeadline||'')+'</span><span class="mut">'+esc(r.Adjustment||'')+'</span></div>'}).join('')+'</div>';
   var act=c.routines.filter(function(r){return routineFinal(r)==='نشط'});h+='<div class="card"><h4>3–4) الروتينات المستمرة والجديدة</h4>'+act.map(function(r){return '<span class="tag '+(r.RoutineType==='روتين أساسي'?'':'acc')+'">'+esc(r.RoutineName)+'</span>'}).join('')+d.newRoutines.map(function(r){return '<span class="tag ok">+ '+esc(L.routine[r.RoutineID].RoutineName)+'</span>'}).join('')+'</div>';
+  if(c.isRoadmap){var sc=clScore(c.checklistItems.map(function(it){return (d.checklist[it.ItemID]||{}).Value}));h+='<div class="card"><h4>📋 تشيك ليست الروتينات</h4><div class="kv"><b>الدرجة:</b> '+(sc.pct===null?'—':sc.pct+'%')+' | <b>نوع المشروع:</b> '+esc(d.projectMode||'—')+(d.afterTrainingDay?' | <b>بعد يوم التدريب:</b> '+esc(d.afterTrainingDay):'')+'</div>'+
+    d.newRoutines.filter(function(r){return (L.routine[r.RoutineID]||{}).IsRoadmap}).map(function(r){var lr=L.routine[r.RoutineID];return '<div class="sm"><span class="tag">'+esc(lr.Code)+'</span> '+esc(lr.RoutineName)+' — <b>إمتى وفين:</b> '+esc(r.WhenWhere||'—')+'</div>'}).join('')+'</div>';}
   h+='<div class="card"><div class="grid g2"><div><label class="f req">موعد الجلسة القادمة</label>'+inp('planEnd','date')+'</div><div><label class="f">رسالة المنتور لصاحب المشروع (تظهر في الخطة)</label>'+ta('mentorSummary','','style="min-height:44px"')+'</div></div></div>';return h;}
 
 /* ---- step 10: validate & save */
 function clientChecks(){var d=S.d,c=S.ctx,e=[];var pr=reviewProgress();if(pr.done<pr.total)e.push('أكمل مراجعة كل المهام السابقة ('+pr.done+'/'+pr.total+')');if(pr.rdone<pr.rtotal)e.push('أكمل مراجعة الروتينات ('+pr.rdone+'/'+pr.rtotal+')');
   if(!d.diagnosis.ProblemID)e.push('اختر المشكلة ذات الأولوية');if(!d.strategy.PrimaryStrategyID)e.push('اختر الاستراتيجية الأساسية');if(!d.readiness)e.push('سجّل درجة الاستعداد');
-  if(!c.isFirstSession&&!d.businessResultNote)e.push('اكتب النتيجة الفعلية للأعمال (الخطوة 3)');d.newTasks.forEach(function(t){if(!t.Deadline)e.push('حدد موعد كل مهمة جديدة')});return e;}
-function st10(){var e=clientChecks();return '<div class="card"><h3>10. حفظ الجلسة وتوليد الخطة</h3>'+(e.length?'<div class="box warn"><b>قبل الحفظ:</b><ul>'+e.map(function(x){return '<li>'+esc(x)+'</li>'}).join('')+'</ul></div>':'<div class="box ok">كل البيانات الأساسية مكتملة.</div>')+
+  if(!c.isFirstSession&&!d.businessResultNote)e.push('اكتب النتيجة الفعلية للأعمال (الخطوة 3)');d.newTasks.forEach(function(t){if(!t.Deadline)e.push('حدد موعد كل مهمة جديدة')});
+  if(c.isRoadmap){if(!d.projectMode)e.push('حدد نوع المشروع (الخطوة 3 — تشيك ليست الروتينات)');var miss=c.checklistItems.filter(function(it){return !(d.checklist[it.ItemID]||{}).Value}).length;if(miss)e.push('قيّم كل بنود تشيك ليست الروتينات — ناقص '+miss+' (الخطوة 3)');
+    d.newRoutines.forEach(function(r){var lr=S.L.routine[r.RoutineID]||{};if(lr.IsRoadmap&&!String(r.WhenWhere||'').trim())e.push('اكتب «إمتى وفين» لـ '+lr.Code+' (الخطوة 7)')});}
+  return e;}
+function clientWarnings(){var d=S.d,c=S.ctx,w=[],lim=S.boot.constants.roadmapNewLimit||2;if(c.isRoadmap&&d.newRoutines.length>lim)w.push('قاعدة خريطة الطريق: مفيش أكتر من '+lim+' روتين جداد في الجلسة — اخترت '+d.newRoutines.length+'.');return w;}
+function st10(){var e=clientChecks(),w=clientWarnings();return '<div class="card"><h3>10. حفظ الجلسة وتوليد الخطة</h3>'+(w.length?'<div class="box warn sm"><b>تنبيه (مش هيمنع الحفظ):</b> '+w.map(esc).join(' ')+'</div>':'')+(e.length?'<div class="box warn"><b>قبل الحفظ:</b><ul>'+e.map(function(x){return '<li>'+esc(x)+'</li>'}).join('')+'</ul></div>':'<div class="box ok">كل البيانات الأساسية مكتملة.</div>')+
   '<div class="sm mut">عند الحفظ: تُسجل المراجعات كسجلات جديدة دون تعديل الجلسات السابقة، وتُنشأ التكليفات الجديدة بنسخة من التعليمات وقت الإسناد، وتبقى الروتينات تكليفًا واحدًا مستمرًا.</div>'+
   '<div class="row" style="margin-top:10px"><button class="btn" data-act="finalize" '+(e.length?'disabled':'')+'>💾 حفظ الجلسة وتوليد الخطة الأسبوعية</button><button class="btn danger sm" data-act="discard">حذف المسودة</button></div></div>';}
 
@@ -459,6 +537,8 @@ function vDash(){var D=S.dash;if(!D)return '';var m=D.metrics,f=S.df;var ps=S.pr
   h+='<h4>جودة عملية المنتورينج</h4><div class="tiles">'+tile(m.activeProjects,'مشروعات نشطة')+tile(m.sessions,'جلسات')+tile(m.tasksAssigned,'مهام أسندت')+tile(m.completed,'مهام مكتملة (مراجعات)','ok')+tile(m.partial,'جزئية','warn')+tile(m.notImplemented,'لم تنفذ/متعثرة','bad')+tile(m.carriedForward,'رُحلت','warn')+'</div>';
   h+='<div class="tiles" style="margin-top:8px">'+rateTile(m.completionRate,'معدل إنجاز المهام',m.dueCompleted+' من '+m.dueCount+' مهمة مستحقة')+rateTile(m.routineAdherence,'الالتزام بالروتين',m.routineDone+' من '+m.routinePlanned+' مرة مخططة')+rateTile(m.evidenceCoverage,'تغطية الأدلة',m.completedWithEvidence+' من '+m.completed+' مكتملة')+rateTile(m.outcomeCoverage,'قياس النتائج',m.outcomeRecorded+' من '+m.outcomeDue+' مستحقة')+'</div>';
   h+='<div class="grid g3" style="margin-top:10px">'+barCard('أكثر عوائق التنفيذ',D.barriers)+barCard('أكثر المشكلات اختيارًا',D.topProblems)+barCard('أكثر الاستراتيجيات اختيارًا',D.topStrategies)+'</div>';
+  var R=D.roadmap;if(R){h+='<h4>🗺 خريطة الطريق — أسيوط (تشيك ليست الروتينات)</h4><div class="tiles">'+tile(R.projects,'مشروعات أسيوط')+tile(R.scored,'اتقيّمت')+tile(R.avgFirst===null?'—':R.avgFirst+'%','متوسط أول جلسة')+tile(R.avgLast===null?'—':R.avgLast+'%','متوسط آخر جلسة','acc')+tile(R.roadmapRoutines,'مهام خريطة الطريق النشطة')+tile(R.stable,'روتينات ثابتة','ok')+'</div>';
+    h+='<div class="grid g2" style="margin-top:8px"><div class="tbl"><table class="t"><tr><th>المشروع</th><th>النوع</th><th>جلسات</th><th>أول</th><th>آخر</th><th>الفرق</th><th>ثابت/نشط</th></tr>'+R.rows.map(function(x){return '<tr><td>'+esc(x.ProjectName)+'</td><td class="sm">'+esc(x.ProjectMode||'—')+'</td><td>'+x.sessions+'</td><td>'+pct(x.first)+'</td><td>'+pct(x.last)+'</td><td><span class="tag '+(x.change>0?'ok':x.change<0?'bad':'')+'">'+(x.change===null?'—':(x.change>0?'+':'')+x.change)+'</span></td><td>'+x.stable+'/'+x.roadmapRoutines+'</td></tr>'}).join('')+'</table></div>'+barCard('أكتر روتينات لسه «لأ/ساعات» (آخر تقييم)',R.gaps)+'</div>';}
   h+='<h4>تغير أداء المشروعات (منفصل عن جودة المنتورينج)</h4>'+(D.performance.length?'<div class="tbl"><table class="t"><tr><th>المشروع</th><th>المؤشر</th><th>أول قياس</th><th>آخر قياس</th><th>الاتجاه</th><th>التغير</th><th>التقييم</th></tr>'+D.performance.map(function(p){return '<tr><td>'+esc(p.ProjectName)+'</td><td>'+esc(p.KPIName)+' <span class="mut sm">('+esc(p.Unit)+')</span></td><td>'+fmtN(p.first)+' <span class="sm mut">'+esc(p.firstDate)+'</span></td><td>'+fmtN(p.last)+' <span class="sm mut">'+esc(p.lastDate)+'</span></td><td>'+spark(p.series)+'</td><td>'+(p.change===null?'—':(p.change>0?'+':'')+fmtN(p.change)+(p.changePct!==null?' ('+p.changePct+'%)':''))+'</td><td>'+(p.improved===true?'<span class="tag ok">تحسن</span>':p.improved===false?'<span class="tag bad">تراجع</span>':'<span class="tag gray">—</span>')+'</td></tr>'}).join('')+'</table></div>':'<div class="card mut">لا توجد قيم مؤشرات في هذا النطاق.</div>');
   if(D.byMentor.length)h+='<h4>حسب المنتور</h4><div class="tbl"><table class="t"><tr><th>المنتور</th><th>مشروعات</th><th>جلسات</th><th>معدل الإنجاز</th><th>الالتزام بالروتين</th></tr>'+D.byMentor.map(function(x){return '<tr><td>'+esc(x.MentorName)+'</td><td>'+x.projects+'</td><td>'+x.sessions+'</td><td>'+pct(x.completionRate)+'</td><td>'+pct(x.routineAdherence)+'</td></tr>'}).join('')+'</table></div>';
   h+='<div class="card sm"><b>التعريفات:</b><br>معدل إنجاز المهام = المهام المكتملة المستحقة خلال الفترة ÷ إجمالي المهام المنطبقة المستحقة خلال الفترة (تُستبعد الملغاة لعدم الملاءمة والموقوفة مؤقتًا).<br>الالتزام بالروتين = مرات الروتين المنفذة ÷ المرات المخططة المستحقة (تُستبعد أيام الإجازة).<br>تغطية الأدلة = المهام المكتملة المدعومة بدليل ÷ إجمالي المهام المكتملة.<br>قياس النتائج = المهام التي سُجلت لها نتيجة ÷ المهام المستحقة لتقييم النتيجة (المكتملة والجزئية).<br>هذه المؤشرات تقيس جودة عملية المنتورينج ولا تُستخدم كبديل عن تغير مؤشرات أداء المشروع.</div>';
@@ -470,13 +550,15 @@ function barCard(t,arr){var mx=Math.max.apply(null,[1].concat(arr.map(function(x
 document.addEventListener('input',function(e){var b=e.target.getAttribute('data-bind');if(b&&S.d){var v=e.target.value;setP(S.d,b,v);S.dirty=true;
   if(/BeforeValue|AfterValue|kpiValues/.test(b)){clearTimeout(window._rr);window._rr=setTimeout(function(){keepScroll(render)},700);}}
   var a=e.target.getAttribute('data-act');if(a==='searchProjects'){S.q=e.target.value;clearTimeout(window._sq);window._sq=setTimeout(function(){keepScroll(render);var x=document.getElementById('pq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},250);}
+  if(a==='rmq'){S.rmf.q=e.target.value;clearTimeout(window._rmq);window._rmq=setTimeout(function(){keepScroll(render);var x=document.getElementById('rmq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},300);}
   if(a==='jsearch'){S.jf.q=e.target.value;clearTimeout(window._jq);window._jq=setTimeout(function(){keepScroll(render);var x=document.getElementById('jq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},300);}});
 document.addEventListener('change',function(e){var t=e.target,a=t.getAttribute('data-act'),b=t.getAttribute('data-bind');
   if(b&&S.d){setP(S.d,b,t.value);S.dirty=true;if(t.tagName==='SELECT'||/Deadline|Date|planEnd/.test(b))keepScroll(render);}
   if(a==='mentor'){S.mentorId=t.value;if(S.view==='dashboard')loadDash();else if(S.view==='projects')render();}
   if(a==='toggleTest'){S.includeTest=t.checked;if(S.view==='dashboard')loadDash();else loadProjects();}
   if(a==='jf'){S.jf[t.getAttribute('data-k')]=t.value;var all=t.value?1:0;if(all)S.journey.sessions.forEach(function(s){S.openCards['ses_'+s.SessionID]=1});render();}
-  if(a==='df'||a==='dfi'){S.df[t.getAttribute('data-k')]=t.value;if(a==='df')loadDash();}});
+  if(a==='df'||a==='dfi'){S.df[t.getAttribute('data-k')]=t.value;if(a==='df')loadDash();}
+  if(a==='rmf'){S.rmf[t.getAttribute('data-k')]=t.value;keepScroll(render);}});
 function keepScroll(fn){var y=window.scrollY;fn();window.scrollTo(0,y);}
 document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el)return;var a=el.getAttribute('data-act'),v=el.getAttribute('data-v');
   if(el.tagName==='SELECT'||(el.tagName==='INPUT'&&el.type!=='checkbox'&&el.type!=='button'))return;if(el.type==='checkbox')return;
@@ -507,7 +589,9 @@ document.addEventListener('click',function(e){var el=e.target.closest('[data-act
   addExtra:function(){var t=document.getElementById('extraTask').value;if(!t)return;if(S.d.newTasks.some(function(x){return x.TaskID===t})){toast('مضافة بالفعل');return;}if(openByTask()[t]){toast('هذه المهمة مسندة ومفتوحة بالفعل');return;}S.d.newTasks.push({TaskID:t,Deadline:addDays(S.d.planEnd,-1),OffStrategyReason:''});S.dirty=true;render()},
   addCustom:function(){S.d.newTasks.push({TaskID:'CUSTOM',TaskName:'',CustomInstructions:'',Deadline:addDays(S.d.planEnd,-1),OffStrategyReason:''});S.dirty=true;render()},
   delTask:function(){S.d.newTasks.splice(+el.getAttribute('data-i'),1);S.dirty=true;keepScroll(render)},
-  addRoutine:function(){S.d.newRoutines.push({RoutineID:v,StartDate:S.d.sessionDate,Responsible:'',CustomNote:''});S.dirty=true;keepScroll(render);toast('أضيف الروتين')},
+  addRoutine:function(){S.d.newRoutines.push({RoutineID:v,StartDate:S.d.sessionDate,Responsible:'',CustomNote:'',WhenWhere:''});S.dirty=true;keepScroll(render);toast('أضيف الروتين')},
+  setMode:function(){S.d.projectMode=v;applyModeNA(S.d,S.ctx);S.dirty=true;keepScroll(render)},
+  clCopy:function(){var prev=S.ctx.previousChecklist||{},n=0;S.ctx.checklistItems.forEach(function(it){var c=S.d.checklist[it.ItemID]=S.d.checklist[it.ItemID]||{Value:'',Note:''};if(!c.Value&&prev[it.ItemID]&&prev[it.ItemID].Value){c.Value=prev[it.ItemID].Value;n++;}});S.dirty=true;keepScroll(render);toast('اتنسخ '+n+' بند — راجعهم مع صاحب المشروع')},
   delRoutine:function(){S.d.newRoutines.splice(+el.getAttribute('data-i'),1);S.dirty=true;keepScroll(render)},
   readiness:function(){S.d.readiness=v;S.dirty=true;keepScroll(render)},
   finalize:finalize,discard:function(){if(!confirm('حذف المسودة؟ لن تتأثر أي جلسة محفوظة.'))return;run(call('discardDraft',S.ctx.session.SessionID)).then(function(){S.dirty=false;openProject(S.ctx.project.ProjectID)})},
@@ -517,8 +601,10 @@ document.addEventListener('click',function(e){var el=e.target.closest('[data-act
   applyDash:loadDash,resetDash:function(){S.df={};loadDash()}};
   if(H[a]){e.preventDefault();H[a]();}});
 function payload(){var d=S.d,c=S.ctx;return {sessionDate:d.sessionDate,planEnd:d.planEnd,businessResultNote:d.businessResultNote,readiness:d.readiness,workloadNote:d.workloadNote,mentorSummary:d.mentorSummary,
+  projectMode:c.isRoadmap?d.projectMode:'',afterTrainingDay:c.isRoadmap?d.afterTrainingDay:'',
+  checklist:c.isRoadmap?c.checklistItems.map(function(it){var x=d.checklist[it.ItemID]||{};return {ItemID:it.ItemID,Value:x.Value||'',Note:x.Note||''}}):[],
   reviews:c.openAssignments.map(function(a){var r=JSON.parse(JSON.stringify(d.reviews[a.AssignmentID]));r.AssignmentID=a.AssignmentID;return r}),
-  routineReviews:c.routines.map(function(r){var rr=d.routineReviews[r.RAID];return {RAID:r.RAID,Decision:rr.Decision,Note:rr.Note,EvidenceLink:rr.EvidenceLink,NewNote:rr.NewNote,Responsible:rr.Responsible,
+  routineReviews:c.routines.map(function(r){var rr=d.routineReviews[r.RAID];return {RAID:r.RAID,Decision:rr.Decision,Note:rr.Note,EvidenceLink:rr.EvidenceLink,NewNote:rr.NewNote,Responsible:rr.Responsible,EvidenceSeen:rr.EvidenceSeen||'',
     occurrences:r.slots.map(function(s){return {DueDate:s.DueDate,PeriodLabel:s.PeriodLabel,Status:rr.occ[s.DueDate+'#'+s.PeriodLabel]}})}}),
   kpiValues:Object.keys(d.kpiValues).filter(function(k){return d.kpiValues[k].Value!==''&&d.kpiValues[k].Value!==undefined}).map(function(k){return {KPIID:k,Value:d.kpiValues[k].Value,Source:d.kpiValues[k].Source}}),
   newProjectKPIs:Object.keys(d.newProjectKPIs).map(function(k){return {KPIID:k,TargetValue:d.newProjectKPIs[k].TargetValue}}),

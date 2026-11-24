@@ -19,8 +19,18 @@ var C = {
   DIAG_CONF: 'مؤكد بدليل', DIAG_LIKELY: 'مرجح ويحتاج تحقق', DIAG_NA: 'غير منطبق',
   WEEKEND: [5],          // Friday (0=Sunday). Change if the business rests on another day.
   MAX_DAILY_SLOTS: 31,
-  NEW_TASKS_SOFT_LIMIT: 3
+  NEW_TASKS_SOFT_LIMIT: 3,
+  // ---- Assiut roadmap (مكتبة خريطة الطريق + تشيك ليست الروتينات)
+  ROADMAP_GOVS: ['أسيوط'],          // default scope; override with LIB_Lists «محافظات خريطة الطريق»
+  ROADMAP_GOVS_LIST: 'محافظات خريطة الطريق',
+  T_ROADMAP: 'مهمة خريطة الطريق',
+  CL_DOES: 'بيعملها', CL_SOME: 'ساعات', CL_NO: 'لأ', CL_NA: 'مش بيخصه',
+  MODE_PRODUCE: 'بينتج', MODE_TRADE: 'بيشتري ويبيع', MODE_BOTH: 'الاتنين',
+  ROADMAP_NEW_LIMIT: 2               // warning only (not enforced): «مفيش أكتر من روتينين جداد في الجلسة»
 };
+C.CL_VALUES = [C.CL_DOES, C.CL_SOME, C.CL_NO, C.CL_NA];
+C.CL_SCORE = {}; C.CL_SCORE[C.CL_DOES] = 2; C.CL_SCORE[C.CL_SOME] = 1; C.CL_SCORE[C.CL_NO] = 0;
+C.MODES = [C.MODE_PRODUCE, C.MODE_TRADE, C.MODE_BOTH];
 C.CLOSING_DECISIONS = [C.DEC_DONE, C.DEC_CANCEL, C.DEC_SPLIT];
 C.TASK_STATUSES = [C.ST_DONE, C.ST_PART, C.ST_PROG, C.ST_NOT, C.ST_BLOCK];
 C.TASK_DECISIONS = [C.DEC_DONE, C.DEC_CONT, C.DEC_CARRY, C.DEC_MOD, C.DEC_SPLIT, C.DEC_PAUSE, C.DEC_CANCEL, C.DEC_ESC];
@@ -73,10 +83,46 @@ function lib_() {
   L.rsteps = group_(L.LIB_RoutineSteps, 'RoutineID');
   Object.keys(L.steps).forEach(function (k) { L.steps[k].sort(function (a, b) { return a.StepNo - b.StepNo; }); });
   Object.keys(L.rsteps).forEach(function (k) { L.rsteps[k].sort(function (a, b) { return a.StepNo - b.StepNo; }); });
+  // roadmap library: indexed on its own AND exposed as routines, so assignment/occurrence tracking is shared
+  L.roadmap = index_((L.LIB_RoadmapTasks || []).filter(function (r) { return r.RoadmapID && r.Active !== C.NO; }), 'RoadmapID');
+  L.checklist = (L.LIB_RoadmapChecklist || []).filter(function (r) { return r.ItemID; }).sort(function (a, b) { return (+a.SortOrder || 0) - (+b.SortOrder || 0); });
+  L.checkItem = index_(L.checklist, 'ItemID');
+  Object.keys(L.roadmap).forEach(function (id) { if (!L.routine[id]) L.routine[id] = roadmapAsRoutine_(L.roadmap[id]); });
   LIBX_ = L;
   return L;
 }
 function resetLibCache_() { LIBX_ = null; }
+function roadmapAsRoutine_(t) {
+  return { RoutineID: t.RoadmapID, AreaID: t.AreaID, RoutineName: t.TaskText, Purpose: t.ExpectedResult, RoutineType: C.T_ROADMAP,
+    FrequencyCode: t.FrequencyCode, TimesPerPeriod: 1, FrequencyText: t.FrequencyText, Responsible: 'صاحب المشروع', Output: t.ExpectedResult,
+    Evidence: t.Indicator, AdherenceMeasure: t.Indicator, SummaryEg: t.ExpectedResult, Code: t.Code, Domain: t.Domain, ProgramDay: t.ProgramDay,
+    AppliesTo: t.AppliesTo, IsRoadmap: true };
+}
+function normAr_(s) { return str_(s).replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/\s+/g, ' ').trim(); }
+function roadmapGovs_() {
+  var custom = (lib_().LIB_Lists || []).filter(function (r) { return r.ListName === C.ROADMAP_GOVS_LIST && str_(r.Value); }).map(function (r) { return r.Value; });
+  return custom.length ? custom : C.ROADMAP_GOVS;
+}
+/** The roadmap (checklist + 145-task library) applies only to projects in the configured governorates (Assiut by default). */
+function isRoadmapProject_(p) {
+  var g = normAr_(p && p.Governorate);
+  return !!g && roadmapGovs_().some(function (x) { return normAr_(x) === g; });
+}
+/** «لمين» column: كل المشاريع / اللي بينتج / اللي بيشتري ويبيع. Unknown project type shows everything. */
+function appliesToMode_(appliesTo, mode) {
+  var a = str_(appliesTo);
+  if (!a || a === 'كل المشاريع' || !mode || mode === C.MODE_BOTH) return true;
+  if (a.indexOf('بينتج') >= 0) return mode === C.MODE_PRODUCE;
+  if (a.indexOf('بيشتري') >= 0) return mode === C.MODE_TRADE;
+  return true;
+}
+function checklistPct_(rows) {   // rows: [{Value}] → {pct, applicable, sum}
+  var scored = rows.filter(function (r) { return C.CL_SCORE[r.Value] !== undefined; });
+  var sum = scored.reduce(function (s, r) { return s + C.CL_SCORE[r.Value]; }, 0);
+  return { pct: scored.length ? Math.round(sum / (2 * scored.length) * 1000) / 10 : null, applicable: scored.length, sum: sum,
+    does: rows.filter(function (r) { return r.Value === C.CL_DOES; }).length, some: rows.filter(function (r) { return r.Value === C.CL_SOME; }).length,
+    no: rows.filter(function (r) { return r.Value === C.CL_NO; }).length };
+}
 function stepsText_(taskId) {
   var s = lib_().steps[taskId] || [];
   return s.map(function (x) { return x.StepNo + '. ' + x.StepTitle + ': ' + x.Instruction; }).join('\n');
@@ -87,10 +133,11 @@ function apiBootstrap() {
   var L = lib_();
   var library = {};
   ['LIB_Areas', 'LIB_Problems', 'LIB_Causes', 'LIB_Strategies', 'LIB_Actions', 'LIB_ActionSteps', 'LIB_Routines',
-    'LIB_RoutineSteps', 'LIB_KPIs', 'LIB_Sources', 'LIB_Lists'].forEach(function (t) { library[t] = L[t]; });
+    'LIB_RoutineSteps', 'LIB_KPIs', 'LIB_Sources', 'LIB_Lists', 'LIB_RoadmapTasks', 'LIB_RoadmapChecklist'].forEach(function (t) { library[t] = L[t] || []; });
   return { library: library, mentors: DB.all('DB_Mentors').filter(function (m) { return m.Active !== C.NO; }),
     user: DB.user(), today: DB.today(), constants: { barriers: C.BARRIERS, statuses: C.TASK_STATUSES, decisions: C.TASK_DECISIONS,
-      routineDecisions: C.ROUTINE_DECISIONS, occStatuses: C.OCC_STATUSES, newTasksSoftLimit: C.NEW_TASKS_SOFT_LIMIT } };
+      routineDecisions: C.ROUTINE_DECISIONS, occStatuses: C.OCC_STATUSES, newTasksSoftLimit: C.NEW_TASKS_SOFT_LIMIT,
+      roadmapGovs: roadmapGovs_(), checklistValues: C.CL_VALUES, modes: C.MODES, roadmapNewLimit: C.ROADMAP_NEW_LIMIT, roadmapType: C.T_ROADMAP } };
 }
 
 function apiListProjects(opts) {
@@ -105,6 +152,7 @@ function apiListProjects(opts) {
     var last = saved[saved.length - 1];
     var open = (asg[p.ProjectID] || []).filter(function (a) { return a.IsOpen === C.YES; }).length;
     return { ProjectID: p.ProjectID, ProjectName: p.ProjectName, OwnerName: p.OwnerName, BusinessType: p.BusinessType, Governorate: p.Governorate,
+      ProjectMode: p.ProjectMode || '', IsRoadmap: isRoadmapProject_(p),
       Round: p.Round, Status: p.Status, DataType: p.DataType, MentorID: p.MentorID, MentorName: (mentors[p.MentorID] || {}).MentorName || '',
       SessionsCount: saved.length, LastSessionNo: last ? last.SessionNo : 0, LastSessionDate: last ? last.SessionDate : '',
       NextSessionDate: last ? last.PlanEnd : '', OpenTasks: open, DraftSessionID: draft ? draft.SessionID : '',
@@ -126,7 +174,8 @@ function apiCreateProject(p) {
     var row = { ProjectID: gen(), ProjectName: str_(p.ProjectName), OwnerName: str_(p.OwnerName), Phone: str_(p.Phone),
       BusinessType: str_(p.BusinessType), Governorate: str_(p.Governorate), Location: str_(p.Location), Round: str_(p.Round),
       MentorID: str_(p.MentorID), StartDate: isDate_(p.StartDate) ? p.StartDate : DB.today(), Status: str_(p.Status) || 'نشط',
-      Description: str_(p.Description), DataType: isTest ? C.TEST : C.REAL, CreatedAt: DB.now(), CreatedBy: DB.user() };
+      Description: str_(p.Description), ProjectMode: C.MODES.indexOf(str_(p.ProjectMode)) >= 0 ? str_(p.ProjectMode) : '',
+      DataType: isTest ? C.TEST : C.REAL, CreatedAt: DB.now(), CreatedBy: DB.user() };
     DB.insert('DB_Projects', [row]);
     var lg = nextId_('DB_SessionHistory', 'LogID', 'LOG-', 6);
     DB.insert('DB_SessionHistory', [log_(lg, row.ProjectID, '', 'إنشاء مشروع', 'Project', row.ProjectID, row.ProjectName, row.DataType)]);
@@ -153,6 +202,17 @@ function routineStats_(ra, occs) {
   return { planned: planned, done: done, rate: planned ? Math.round(done / planned * 1000) / 10 : null, occurrences: mine };
 }
 
+/** «الروتين يتحسب ثابت لما يبان دليله في جلستين ورا بعض»: the last two sessions that reviewed it both saw evidence. */
+function routineStability_(ra, occs) {
+  var bySes = {};
+  occs.filter(function (o) { return o.IsPlanned === C.YES || o.EvidenceSeen === C.YES; }).forEach(function (o) {
+    var k = +o.SessionNo; bySes[k] = bySes[k] || { seen: false }; if (o.EvidenceSeen === C.YES) bySes[k].seen = true; });
+  var nos = Object.keys(bySes).map(Number).sort(function (a, b) { return a - b; });
+  var ev = nos.filter(function (n) { return bySes[n].seen; });
+  var last2 = nos.slice(-2);
+  return { stable: last2.length === 2 && last2.every(function (n) { return bySes[n].seen; }), evidenceSessions: ev, reviewedSessions: nos };
+}
+
 function apiGetJourney(projectId) {
   var L = lib_();
   var p = DB.all('DB_Projects').filter(function (x) { return x.ProjectID === projectId; })[0];
@@ -168,6 +228,7 @@ function apiGetJourney(projectId) {
   var pk = DB.all('DB_ProjectKPIs').filter(function (k) { return k.ProjectID === projectId; });
   var kv = DB.all('DB_KPIValues').filter(function (k) { return k.ProjectID === projectId; });
   var evid = DB.all('DB_Evidence').filter(function (e) { return e.ProjectID === projectId; });
+  var cls = DB.all('DB_ChecklistScores').filter(function (c) { return c.ProjectID === projectId; });
 
   asg.forEach(function (a) {
     a.reviews = (revBy[a.AssignmentID] || []).sort(function (x, y) { return x.SessionNo - y.SessionNo; });
@@ -188,6 +249,9 @@ function apiGetJourney(projectId) {
     r.Purpose = lr.Purpose || ''; r.FrequencyText = lr.FrequencyText || '';
     r.AreaName = (L.area[r.AreaID] || {}).AreaName || '';
     r.StrategyName = (L.strategy[r.StrategyID] || {}).StrategyName || '';
+    var stab = routineStability_(r, st.occurrences);
+    r.stable = stab.stable; r.evidenceSessions = stab.evidenceSessions; r.reviewedSessions = stab.reviewedSessions;
+    if (lr.IsRoadmap) { r.IsRoadmap = true; r.Code = r.RoadmapCode || lr.Code; r.Indicator = lr.Evidence; r.Domain = lr.Domain; }
   });
   sessions.forEach(function (s) {
     s.MentorName = (mentors[s.MentorID] || {}).MentorName || '';
@@ -196,6 +260,7 @@ function apiGetJourney(projectId) {
     s.SupportingStrategyName = (L.strategy[s.SupportingStrategyID] || {}).StrategyName || '';
     s.diagnoses = diags.filter(function (d) { return d.SessionID === s.SessionID; }).map(function (d) {
       d.CauseText = (L.cause[d.CauseID] || {}).CauseText || ''; return d; });
+    s.checklist = cls.filter(function (c) { return c.SessionID === s.SessionID; });
     delete s.DraftJSON;
   });
   var kpis = pk.map(function (k) {
@@ -224,7 +289,14 @@ function apiGetJourney(projectId) {
     evidenceCount: evid.length
   };
   p.MentorName = (mentors[p.MentorID] || {}).MentorName || '';
-  return { project: p, sessions: sessions, assignments: asg, routines: ras, kpis: kpis, stats: stats, evidence: evid };
+  p.IsRoadmap = isRoadmapProject_(p);
+  var savedS = sessions.filter(function (s) { return s.Status === C.SES_SAVED; });
+  var clHist = savedS.filter(function (s) { return s.checklist.length; }).map(function (s) {
+    var c = checklistPct_(s.checklist); return { SessionID: s.SessionID, SessionNo: s.SessionNo, SessionDate: s.SessionDate, pct: c.pct, does: c.does, some: c.some, no: c.no, applicable: c.applicable }; });
+  var lastCl = clHist.length ? savedS.filter(function (s) { return s.SessionID === clHist[clHist.length - 1].SessionID; })[0].checklist : [];
+  stats.stableRoutines = ras.filter(function (r) { return r.stable && r.Status === C.RS_ACTIVE; }).length;
+  return { project: p, sessions: sessions, assignments: asg, routines: ras, kpis: kpis, stats: stats, evidence: evid,
+    checklist: { history: clHist, latest: index_(lastCl, 'ItemID') } };
 }
 
 /* ------------------------------------------------------------------ session start / draft */
@@ -247,11 +319,12 @@ function routineSlots_(ra, from, to, allOccs) {
       var due = dAdd_(start, Math.min(days - 1, i * 7 + 6));
       slots.push({ DueDate: due, PeriodLabel: 'أسبوع ' + (i + 1) + (times > 1 ? ' — مرة ' + k : ''), defaultStatus: '' });
     }
-  } else if (ra.FrequencyCode === 'MONTHLY') {
+  } else if (ra.FrequencyCode === 'MONTHLY' || ra.FrequencyCode === 'BIWEEKLY') {
+    var len = ra.FrequencyCode === 'MONTHLY' ? 28 : 14, lbl = ra.FrequencyCode === 'MONTHLY' ? 'شهر ' : 'أسبوعين ';
     var prev = allOccs.filter(function (o) { return o.RAID === ra.RAID && o.IsPlanned === C.YES; }).map(function (o) { return o.DueDate; }).sort();
     var anchor = prev.length ? dAdd_(prev[prev.length - 1], 1) : ra.StartDate;
-    var n = Math.floor((dDiff_(anchor, to) + 1) / 28);
-    for (i = 1; i <= n; i++) slots.push({ DueDate: dAdd_(anchor, Math.min(i * 28 - 1, dDiff_(anchor, to))), PeriodLabel: 'شهر ' + i, defaultStatus: '' });
+    var n = Math.floor((dDiff_(anchor, to) + 1) / len);
+    for (i = 1; i <= n; i++) slots.push({ DueDate: dAdd_(anchor, Math.min(i * len - 1, dDiff_(anchor, to))), PeriodLabel: lbl + i, defaultStatus: '' });
   } else { // PERIODIC / event-based
     slots.push({ DueDate: to, PeriodLabel: 'عند الحدث (' + from + ' → ' + to + ')', defaultStatus: '' });
   }
@@ -272,8 +345,10 @@ function sessionContext_(session) {
   });
   var saved = j.sessions.filter(function (s) { return s.Status === C.SES_SAVED; });
   var prev = saved[saved.length - 1] || null;
+  var isRm = isRoadmapProject_(j.project);
   return { session: session, project: j.project, openAssignments: open, routines: routines, previousSession: prev,
-    journey: j, isFirstSession: saved.length === 0 };
+    journey: j, isFirstSession: saved.length === 0, isRoadmap: isRm,
+    checklistItems: isRm ? L.checklist : [], previousChecklist: isRm ? j.checklist.latest : {} };
 }
 
 function apiStartSession(projectId, mentorId, sessionDate) {
@@ -364,6 +439,7 @@ function validateFinalize_(ctx, P) {
     if (!rr || C.ROUTINE_DECISIONS.indexOf(rr.Decision) < 0) { errs.push('حدد قرار الروتين «' + r.RoutineName + '»'); return; }
     (rr.occurrences || []).forEach(function (o) { if (C.OCC_STATUSES.indexOf(o.Status) < 0) errs.push('حدد حالة كل مرة مستحقة في روتين «' + r.RoutineName + '» (' + o.PeriodLabel + ')'); });
     if (r.slots.length && (rr.occurrences || []).length !== r.slots.length) errs.push('سجل كل المرات المستحقة لروتين «' + r.RoutineName + '»');
+    if (r.IsRoadmap && r.slots.length && [C.YES, C.NO].indexOf(rr.EvidenceSeen) < 0) errs.push('حدد هل الدليل اتشاف لروتين «' + r.RoutineName + '»');
   });
   var D = P.diagnosis || {};
   if (!L.problem[D.ProblemID]) errs.push('اختر المشكلة ذات الأولوية');
@@ -410,6 +486,8 @@ function validateFinalize_(ctx, P) {
   (P.newRoutines || []).forEach(function (r) {
     var lr = L.routine[r.RoutineID];
     if (!lr) { errs.push('روتين غير معروف: ' + r.RoutineID); return; }
+    if (lr.IsRoadmap && !ctx.isRoadmap) errs.push('مكتبة خريطة الطريق متاحة لمشروعات ' + roadmapGovs_().join('، ') + ' فقط: «' + lr.RoutineName + '»');
+    if (lr.IsRoadmap && !str_(r.WhenWhere)) errs.push('اكتب «إمتى وفين» لروتين ' + lr.Code + ' «' + lr.RoutineName + '»');
     if (seenR[r.RoutineID]) errs.push('الروتين مكرر: «' + lr.RoutineName + '»');
     seenR[r.RoutineID] = 1;
     if (activeAfter[r.RoutineID]) errs.push('الروتين «' + lr.RoutineName + '» مسند بالفعل لهذا المشروع؛ عدّله أو أعد تفعيله بدل تكراره');
@@ -420,6 +498,14 @@ function validateFinalize_(ctx, P) {
   if (!isDate_(P.planEnd) || P.planEnd <= P.sessionDate) errs.push('حدد موعد الجلسة التالية بعد تاريخ هذه الجلسة');
   if (!ctx.isFirstSession && !str_(P.businessResultNote)) errs.push('اكتب النتيجة الفعلية للأعمال منذ الجلسة السابقة (حتى لو: لا تغيير بعد)');
   (P.kpiValues || []).forEach(function (k) { if (!L.kpi[k.KPIID]) errs.push('مؤشر غير معروف: ' + k.KPIID); else if (num_(k.Value) === null) errs.push('قيمة غير رقمية للمؤشر «' + L.kpi[k.KPIID].KPIName + '»'); });
+  if (ctx.isRoadmap) {
+    var mode = str_(P.projectMode) || str_(ctx.project.ProjectMode);
+    if (C.MODES.indexOf(mode) < 0) errs.push('حدد نوع المشروع: بينتج / بيشتري ويبيع / الاتنين (لتشيك ليست الروتينات)');
+    var cl = index_(P.checklist || [], 'ItemID');
+    var missing = ctx.checklistItems.filter(function (it) { return C.CL_VALUES.indexOf((cl[it.ItemID] || {}).Value) < 0; });
+    if (missing.length) errs.push('قيّم كل بنود تشيك ليست الروتينات (ناقص ' + missing.length + ' من ' + ctx.checklistItems.length + '): ' + missing.slice(0, 3).map(function (it) { return '«' + it.RoutineText + '»'; }).join('، ') + (missing.length > 3 ? '…' : ''));
+    (P.checklist || []).forEach(function (c) { if (!L.checkItem[c.ItemID]) errs.push('بند غير معروف في التشيك ليست: ' + c.ItemID); });
+  } else if ((P.checklist || []).length) errs.push('تشيك ليست الروتينات خاصة بمشروعات ' + roadmapGovs_().join('، '));
   return errs;
 }
 
@@ -442,8 +528,8 @@ function apiFinalizeSession(sessionId, P) {
         gEv = nextId_('DB_Evidence', 'EvidenceID', 'EVD-', 6), gOcc = nextId_('DB_RoutineOccurrences', 'OccurrenceID', 'OCC-', 7),
         gRA = nextId_('DB_RoutineAssignments', 'RAID', 'RA-', 5), gKV = nextId_('DB_KPIValues', 'ValueID', 'KV-', 6),
         gPK = nextId_('DB_ProjectKPIs', 'PKID', 'PK-', 5), gDx = nextId_('DB_Diagnoses', 'DiagnosisID', 'DX-', 6),
-        gLog = nextId_('DB_SessionHistory', 'LogID', 'LOG-', 6);
-    var reviews = [], evidence = [], newAsg = [], occRows = [], logs = [], asgUpdates = [], raUpdates = [];
+        gLog = nextId_('DB_SessionHistory', 'LogID', 'LOG-', 6), gCS = nextId_('DB_ChecklistScores', 'ScoreID', 'CS-', 7);
+    var reviews = [], evidence = [], newAsg = [], occRows = [], logs = [], asgUpdates = [], raUpdates = [], clRows = [];
     var rv = index_(P.reviews || [], 'AssignmentID');
 
     // 1) review of previous tasks (append-only) + refresh of derived cache columns
@@ -501,6 +587,7 @@ function apiFinalizeSession(sessionId, P) {
         occRows.push({ OccurrenceID: gOcc(), RAID: r.RAID, ProjectID: p.ProjectID, RoutineID: r.RoutineID, SessionID: s.SessionID, SessionNo: s.SessionNo,
           DueDate: o.DueDate, PeriodLabel: o.PeriodLabel, Status: o.Status, IsPlanned: o.Status === C.OCC_NA ? C.NO : C.YES,
           IsDone: o.Status === C.OCC_DONE ? C.YES : C.NO, Note: str_(rr.Note), EvidenceLink: str_(rr.EvidenceLink), AreaID: r.AreaID,
+          EvidenceSeen: [C.YES, C.NO].indexOf(rr.EvidenceSeen) >= 0 ? rr.EvidenceSeen : '',
           MentorID: s.MentorID, Round: s.Round, DataType: dt, CreatedAt: now });
       });
       if (str_(rr.EvidenceLink)) evidence.push({ EvidenceID: gEv(), ProjectID: p.ProjectID, SessionID: s.SessionID, LinkedType: 'روتين', LinkedID: r.RAID,
@@ -562,13 +649,32 @@ function apiFinalizeSession(sessionId, P) {
     var raRows = (P.newRoutines || []).map(function (r) {
       var lr = L.routine[r.RoutineID];
       var id = gRA();
-      logs.push(log_(gLog, p.ProjectID, s.SessionID, 'إسناد روتين', 'Routine', id, lr.RoutineName, dt));
+      logs.push(log_(gLog, p.ProjectID, s.SessionID, 'إسناد روتين', 'Routine', id, (lr.IsRoadmap ? lr.Code + ' ' : '') + lr.RoutineName, dt));
       return Object.assign({ RAID: id, ProjectID: p.ProjectID, RoutineID: r.RoutineID, RoutineName: lr.RoutineName, RoutineType: lr.RoutineType, AreaID: lr.AreaID,
         StrategyID: lr.RoutineType === C.T_LINKED ? (str_(r.StrategyID) || S.PrimaryStrategyID) : str_(r.StrategyID), FrequencyCode: lr.FrequencyCode,
         TimesPerPeriod: num_(lr.TimesPerPeriod) || 1, StartDate: isDate_(r.StartDate) ? r.StartDate : date, StartSessionID: s.SessionID,
         Responsible: str_(r.Responsible) || lr.Responsible, CustomNote: str_(r.CustomNote), Status: C.RS_ACTIVE, StatusSessionID: s.SessionID,
-        EndDate: '', CreatedAt: now }, common);
+        EndDate: '', WhenWhere: str_(r.WhenWhere), RoadmapCode: lr.IsRoadmap ? lr.Code : '', CreatedAt: now }, common);
     });
+
+    // 6b) Assiut roadmap: routine checklist scored every session (append-only) + project type
+    var clStat = null, projPatch = null;
+    if (ctx.isRoadmap) {
+      var clBy = index_(P.checklist || [], 'ItemID');
+      clRows = ctx.checklistItems.map(function (it) {
+        var c = clBy[it.ItemID], v = c.Value;
+        return { ScoreID: gCS(), ProjectID: p.ProjectID, SessionID: s.SessionID, SessionNo: s.SessionNo, ItemID: it.ItemID, Value: v,
+          Score: C.CL_SCORE[v] === undefined ? '' : C.CL_SCORE[v], Note: str_(c.Note), AreaID: it.AreaID, MentorID: s.MentorID, Round: s.Round, DataType: dt, CreatedAt: now };
+      });
+      clStat = checklistPct_(clRows);
+      logs.push(log_(gLog, p.ProjectID, s.SessionID, 'تشيك ليست الروتينات', 'Session', s.SessionID, 'الدرجة ' + (clStat.pct === null ? '—' : clStat.pct + '%') +
+        ' (بيعملها ' + clStat.does + '، ساعات ' + clStat.some + '، لأ ' + clStat.no + ')', dt));
+      var mode = str_(P.projectMode);
+      if (C.MODES.indexOf(mode) >= 0 && mode !== str_(p.ProjectMode)) {
+        projPatch = { ProjectMode: mode };
+        logs.push(log_(gLog, p.ProjectID, s.SessionID, 'تعديل نوع المشروع', 'Project', p.ProjectID, (p.ProjectMode || '—') + ' ← ' + mode, dt));
+      }
+    }
 
     // 7) session record
     var continuing = ctx.openAssignments.filter(function (a) { return C.CLOSING_DECISIONS.indexOf(rv[a.AssignmentID].Decision) < 0; }).length;
@@ -579,7 +685,8 @@ function apiFinalizeSession(sessionId, P) {
       ContinuedFocus: D.ContinuedFocus ? C.YES : C.NO, Readiness: num_(P.readiness), WorkloadNote: str_(P.workloadNote),
       NewTasksCount: (P.newTasks || []).length + newAsg.filter(function (a) { return a.ParentAssignmentID; }).length,
       ContinuingTasksCount: continuing, ActiveRoutinesCount: activeRoutines, BusinessResultNote: str_(P.businessResultNote),
-      MentorSummary: str_(P.mentorSummary), DraftJSON: '', SavedAt: now };
+      MentorSummary: str_(P.mentorSummary), DraftJSON: '', SavedAt: now, AfterTrainingDay: str_(P.afterTrainingDay),
+      ChecklistScorePct: clStat ? clStat.pct : '', ChecklistApplicable: clStat ? clStat.applicable : '' };
     logs.push(log_(gLog, p.ProjectID, s.SessionID, 'حفظ جلسة', 'Session', s.SessionID, 'مراجعة ' + reviews.length + ' مهمة، ' + newAsg.length + ' مهمة جديدة، ' + raRows.length + ' روتين جديد', dt));
 
     // writes (all validated above)
@@ -593,9 +700,12 @@ function apiFinalizeSession(sessionId, P) {
     if (kvRows.length) DB.insert('DB_KPIValues', kvRows);
     if (dxRows.length) DB.insert('DB_Diagnoses', dxRows);
     if (evidence.length) DB.insert('DB_Evidence', evidence);
+    if (clRows.length) DB.insert('DB_ChecklistScores', clRows);
+    if (projPatch) DB.update('DB_Projects', 'ProjectID', p.ProjectID, projPatch);
     DB.update('DB_Sessions', 'SessionID', s.SessionID, sp);
     DB.insert('DB_SessionHistory', logs);
-    return { ok: true, sessionId: s.SessionID, reviews: reviews.length, newTasks: newAsg.length, newRoutines: raRows.length, occurrences: occRows.length };
+    return { ok: true, sessionId: s.SessionID, reviews: reviews.length, newTasks: newAsg.length, newRoutines: raRows.length, occurrences: occRows.length,
+      checklistPct: clStat ? clStat.pct : null };
   });
 }
 
@@ -629,10 +739,11 @@ function apiGetPlan(sessionId) {
   });
   var ras = DB.all('DB_RoutineAssignments').filter(function (r) {
     return r.ProjectID === s.ProjectID && r.StartDate <= s.PlanEnd && (r.Status === C.RS_ACTIVE || (r.EndDate && r.EndDate > s.SessionDate)); });
-  var groups = { DAILY: [], WEEKLY: [], MONTHLY: [], PERIODIC: [] };
+  var groups = { DAILY: [], WEEKLY: [], BIWEEKLY: [], MONTHLY: [], PERIODIC: [] };
   ras.forEach(function (r) {
     var lr = L.routine[r.RoutineID] || {};
     (groups[r.FrequencyCode] || groups.PERIODIC).push({ RAID: r.RAID, RoutineName: r.RoutineName, RoutineType: r.RoutineType, Frequency: lr.FrequencyText,
+      IsRoadmap: !!lr.IsRoadmap, Code: r.RoadmapCode || lr.Code || '', WhenWhere: r.WhenWhere || '', Indicator: lr.IsRoadmap ? lr.Evidence : '',
       Summary: lr.SummaryEg, Steps: (L.rsteps[r.RoutineID] || []).map(function (x) { return { no: x.StepNo, title: x.StepTitle, text: x.Instruction }; }),
       Output: lr.Output, Evidence: lr.Evidence, Responsible: r.Responsible, CustomNote: r.CustomNote, Paper: lr.PaperAlternative, IsNew: r.StartSessionID === s.SessionID });
   });
@@ -644,8 +755,22 @@ function apiGetPlan(sessionId) {
       Strategy: strat.StrategyName, StrategyAim: strat.Aim, Expected: strat.ExpectedResults,
       Supporting: (L.strategy[s.SupportingStrategyID] || {}).StrategyName || '', Continued: s.ContinuedFocus === C.YES },
     newTasks: newTasks, continuing: continuing.filter(function (c) { return !c.Paused; }), paused: continuing.filter(function (c) { return c.Paused; }),
-    routines: groups, mentorSummary: s.MentorSummary, nextSession: s.PlanEnd
+    routines: groups, mentorSummary: s.MentorSummary, nextSession: s.PlanEnd,
+    checklist: planChecklist_(s), businessResult: s.BusinessResultNote, afterTrainingDay: s.AfterTrainingDay || ''
   };
+}
+/** Checklist summary for a saved session: score now vs first session, and the items still «لأ/ساعات». */
+function planChecklist_(s) {
+  var L = lib_();
+  var all = DB.all('DB_ChecklistScores').filter(function (c) { return c.ProjectID === s.ProjectID; });
+  var mine = all.filter(function (c) { return c.SessionID === s.SessionID; });
+  if (!mine.length) return null;
+  var nos = uniq_(all.map(function (c) { return String(c.SessionNo); })).map(Number).sort(function (a, b) { return a - b; });
+  var first = all.filter(function (c) { return +c.SessionNo === nos[0]; });
+  var now = checklistPct_(mine), base = checklistPct_(first);
+  var gaps = mine.filter(function (c) { return c.Value === C.CL_NO || c.Value === C.CL_SOME; }).map(function (c) {
+    var it = L.checkItem[c.ItemID] || {}; return { text: it.RoutineText, domain: it.Domain, value: c.Value }; });
+  return { pct: now.pct, does: now.does, some: now.some, no: now.no, applicable: now.applicable, firstPct: base.pct, firstSessionNo: nos[0], gaps: gaps };
 }
 
 function esc_(t) { return str_(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -694,15 +819,17 @@ function apiPlanHtml(sessionId) {
   else o.push('<table><tr><th>المهمة الأصلية</th><th>من جلسة</th><th>الحالة السابقة</th><th>القرار</th><th>الموعد الجديد</th><th>التعديل المطلوب</th></tr>' +
     P.continuing.map(function (c) { return '<tr><td>' + esc_(c.TaskName) + '</td><td>' + c.AssignedSessionNo + '</td><td>' + esc_(c.PreviousStatus) + '</td><td>' + esc_(c.Decision) +
       '</td><td>' + esc_(c.Deadline) + '</td><td>' + esc_(c.Adjustment) + '</td></tr>'; }).join('') + '</table>');
-  var groupNames = { DAILY: 'كل يوم', WEEKLY: 'كل أسبوع', MONTHLY: 'كل شهر', PERIODIC: 'عند الحاجة / عند الحدث' };
+  var groupNames = { DAILY: 'كل يوم', WEEKLY: 'كل أسبوع', BIWEEKLY: 'كل أسبوعين', MONTHLY: 'كل شهر', PERIODIC: 'عند الحاجة / عند الحدث' };
   var rc = 0; Object.keys(P.routines).forEach(function (k) { rc += P.routines[k].length; });
   o.push('<h2>📅 الروتين المستمر (' + rc + ')</h2>');
-  ['DAILY', 'WEEKLY', 'MONTHLY', 'PERIODIC'].forEach(function (k) {
+  ['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'PERIODIC'].forEach(function (k) {
     if (!P.routines[k].length) return;
     o.push('<div class="kv" style="margin-top:8px"><b>' + groupNames[k] + ':</b></div>');
     P.routines[k].forEach(function (r) {
-      o.push('<div class="card"><h3>' + esc_(r.RoutineName) + (r.IsNew ? '<span class="tag">جديد</span>' : '') + '<span class="tag">' + esc_(r.Frequency) + '</span></h3>');
+      o.push('<div class="card"><h3>' + (r.Code ? '<span class="tag">' + esc_(r.Code) + '</span> ' : '') + esc_(r.RoutineName) + (r.IsNew ? '<span class="tag">جديد</span>' : '') + '<span class="tag">' + esc_(r.Frequency) + '</span></h3>');
       if (r.Summary) o.push('<div class="eg">' + esc_(r.Summary) + '</div>');
+      if (r.WhenWhere) o.push('<div class="kv"><b>إمتى وفين:</b> ' + esc_(r.WhenWhere) + '</div>');
+      if (r.Indicator) o.push('<div class="kv"><b>هنتابعه بـ:</b> ' + esc_(r.Indicator) + '</div>');
       if (r.CustomNote) o.push('<div class="kv"><b>ملاحظة المنتور:</b> ' + esc_(r.CustomNote) + '</div>');
       o.push('<ol>' + r.Steps.map(function (x) { return '<li><b>' + esc_(x.title) + ':</b> ' + esc_(x.text) + '</li>'; }).join('') + '</ol>');
       o.push('<div class="kv"><b>المسؤول:</b> ' + esc_(r.Responsible) + ' &nbsp; <b>الدليل:</b> ' + esc_(r.Evidence) + '</div>');
@@ -710,6 +837,12 @@ function apiPlanHtml(sessionId) {
       o.push('</div>');
     });
   });
+  if (P.checklist) {
+    var ck = P.checklist;
+    o.push('<h2>📋 تشيك ليست الروتينات</h2><div class="card"><div class="kv"><b>الدرجة النهارده:</b> ' + (ck.pct === null ? '—' : ck.pct + '%') +
+      ' (بيعملها ' + ck.does + ' · ساعات ' + ck.some + ' · لأ ' + ck.no + ')' + (ck.firstSessionNo !== h.SessionNo && ck.firstPct !== null ? ' &nbsp; <b>في أول جلسة:</b> ' + ck.firstPct + '%' : '') + '</div>' +
+      (ck.gaps.length ? '<div class="kv"><b>روتينات لسه محتاجة شغل:</b> ' + ck.gaps.map(function (g) { return esc_(g.text) + ' <span class="muted">(' + esc_(g.value) + ')</span>'; }).join('؛ ') + '</div>' : '') + '</div>');
+  }
   if (P.paused.length) o.push('<h2>⏸ مهام موقوفة مؤقتًا</h2><div class="muted">' + P.paused.map(function (c) { return esc_(c.TaskName); }).join('، ') + '</div>');
   o.push('<h2>📌 الجلسة الجاية</h2><div class="card"><div class="kv"><b>الميعاد:</b> ' + esc_(P.nextSession) + '</div><div class="kv">هات معاك الأدلة المطلوبة (صور، الدفتر، لقطات شاشة) وأرقام الأسبوع، وهنراجع كل مهمة مع بعض.</div>' +
     (P.mentorSummary ? '<div class="kv"><b>كلمة المنتور:</b> ' + esc_(P.mentorSummary) + '</div>' : '') + '</div>');
@@ -731,10 +864,11 @@ function apiPlanText(sessionId) {
     o.push('   الدليل: ' + t.Evidence);
   });
   if (P.continuing.length) { o.push(''); o.push('*🔁 مهام مستمرة:*'); P.continuing.forEach(function (c) { o.push('• ' + c.TaskName + ' — ' + c.Decision + ' — ' + c.Deadline + (c.Adjustment ? ' (' + c.Adjustment + ')' : '')); }); }
-  var names = { DAILY: 'كل يوم', WEEKLY: 'كل أسبوع', MONTHLY: 'كل شهر', PERIODIC: 'عند الحاجة' };
+  var names = { DAILY: 'كل يوم', WEEKLY: 'كل أسبوع', BIWEEKLY: 'كل أسبوعين', MONTHLY: 'كل شهر', PERIODIC: 'عند الحاجة' };
   var any = false;
-  ['DAILY', 'WEEKLY', 'MONTHLY', 'PERIODIC'].forEach(function (k) { if (P.routines[k].length) { if (!any) { o.push(''); o.push('*📅 الروتين:*'); any = true; }
-    o.push(names[k] + ': ' + P.routines[k].map(function (r) { return r.RoutineName; }).join('، ')); } });
+  ['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'PERIODIC'].forEach(function (k) { if (P.routines[k].length) { if (!any) { o.push(''); o.push('*📅 الروتين:*'); any = true; }
+    o.push(names[k] + ': ' + P.routines[k].map(function (r) { return (r.Code ? r.Code + ' ' : '') + r.RoutineName + (r.WhenWhere ? ' (' + r.WhenWhere + ')' : ''); }).join('، ')); } });
+  if (P.checklist && P.checklist.pct !== null) { o.push(''); o.push('📋 تشيك ليست الروتينات: ' + P.checklist.pct + '%' + (P.checklist.firstSessionNo !== h.SessionNo && P.checklist.firstPct !== null ? ' (أول جلسة ' + P.checklist.firstPct + '%)' : '')); }
   o.push(''); o.push('📌 الجلسة الجاية: ' + P.nextSession + ' — هات الأدلة والأرقام معاك.');
   return o.join('\n');
 }
@@ -822,7 +956,37 @@ function apiDashboard(F) {
       routineAdherence: rate_(o.filter(function (x) { return x.IsDone === C.YES; }).length, o.filter(function (x) { return x.IsPlanned === C.YES; }).length) };
   }).filter(function (x) { return x.projects || x.sessions; });
 
-  return { filters: F, metrics: m, barriers: Object.keys(barriers).map(function (k) { return { name: k, count: barriers[k] }; }).sort(function (a, b) { return b.count - a.count; }),
+  // Assiut roadmap: checklist score first vs latest per project, stable roadmap routines
+  var rmProjects = projects.filter(isRoadmapProject_);
+  var cls = DB.all('DB_ChecklistScores').filter(function (c) { return okRow(c, null, null); });
+  var raAll = DB.all('DB_RoutineAssignments').filter(function (r) { return pset[r.ProjectID]; });
+  var occAll = DB.all('DB_RoutineOccurrences').filter(function (o) { return pset[o.ProjectID]; });
+  var occByRA = group_(occAll, 'RAID');
+  var rmRows = rmProjects.map(function (p) {
+    var mine = cls.filter(function (c) { return c.ProjectID === p.ProjectID; });
+    var nos = uniq_(mine.map(function (c) { return String(c.SessionNo); })).map(Number).sort(function (a, b) { return a - b; });
+    var at = function (n) { return checklistPct_(mine.filter(function (c) { return +c.SessionNo === n; })).pct; };
+    var ras = raAll.filter(function (r) { return r.ProjectID === p.ProjectID && r.RoadmapCode; });
+    var active = ras.filter(function (r) { return r.Status === C.RS_ACTIVE; });
+    return { ProjectID: p.ProjectID, ProjectName: p.ProjectName, ProjectMode: p.ProjectMode || '', sessions: nos.length,
+      first: nos.length ? at(nos[0]) : null, last: nos.length ? at(nos[nos.length - 1]) : null,
+      roadmapRoutines: active.length, stable: active.filter(function (r) { return routineStability_(r, occByRA[r.RAID] || []).stable; }).length };
+  });
+  rmRows.forEach(function (r) { r.change = r.first !== null && r.last !== null && r.sessions > 1 ? Math.round((r.last - r.first) * 10) / 10 : null; });
+  var avg = function (k) { var v = rmRows.filter(function (r) { return r[k] !== null && r.sessions; }).map(function (r) { return r[k]; });
+    return v.length ? Math.round(v.reduce(function (a, b) { return a + b; }, 0) / v.length * 10) / 10 : null; };
+  var itemGaps = {};
+  rmRows.forEach(function (r) {
+    var mine = cls.filter(function (c) { return c.ProjectID === r.ProjectID; });
+    var lastNo = Math.max.apply(null, [0].concat(mine.map(function (c) { return +c.SessionNo; })));
+    mine.filter(function (c) { return +c.SessionNo === lastNo && (c.Value === C.CL_NO || c.Value === C.CL_SOME); }).forEach(function (c) { itemGaps[c.ItemID] = (itemGaps[c.ItemID] || 0) + 1; });
+  });
+  var roadmap = rmProjects.length ? { projects: rmRows.length, scored: rmRows.filter(function (r) { return r.sessions; }).length,
+    avgFirst: avg('first'), avgLast: avg('last'), roadmapRoutines: rmRows.reduce(function (a, r) { return a + r.roadmapRoutines; }, 0),
+    stable: rmRows.reduce(function (a, r) { return a + r.stable; }, 0), rows: rmRows,
+    gaps: Object.keys(itemGaps).map(function (k) { return { id: k, name: (L.checkItem[k] || {}).RoutineText || k, count: itemGaps[k] }; }).sort(function (a, b) { return b.count - a.count; }) } : null;
+
+  return { filters: F, metrics: m, roadmap: roadmap, barriers: Object.keys(barriers).map(function (k) { return { name: k, count: barriers[k] }; }).sort(function (a, b) { return b.count - a.count; }),
     topProblems: topProblems, topStrategies: topStrategies, topCauses: topCauses.slice(0, 10), performance: perf, byMentor: byMentor,
     rounds: uniq_(DB.all('DB_Projects').map(function (p) { return str_(p.Round); })) };
 }

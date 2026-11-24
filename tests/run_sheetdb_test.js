@@ -33,6 +33,7 @@ const sheets = {};
 const ss = { getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = new Sheet(n)), getId: () => 'MOCK', getSpreadsheetTimeZone: () => 'Africa/Cairo' };
 // seed library sheets exactly like the xlsx: row1 labels, row2 keys
 for (const [t, rows] of Object.entries(lib)) {
+  if (t === 'LIB_RoadmapTasks' || t === 'LIB_RoadmapChecklist') continue;   // created by setupSystem() from RoadmapData.gs
   const sh = ss.insertSheet(t); const keys = Object.keys(rows[0]);
   sh.data.push(keys.map(k => 'label ' + k)); sh.data.push(keys);
   rows.forEach(r => sh.data.push(keys.map(k => r[k])));
@@ -48,12 +49,17 @@ const ctx = {
   ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/mock' }) }
 };
 vm.createContext(ctx);
-for (const f of ['Schema.gs', 'Core.gs', 'SheetDb.gs', 'TestData.gs', 'Code.gs']) vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f });
+for (const f of ['Schema.gs', 'Core.gs', 'SheetDb.gs', 'TestData.gs', 'RoadmapData.gs', 'Code.gs']) vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f });
 let pass = 0, fail = 0; const ok = (c, m) => { if (c) pass++; else { fail++; console.log('  ✗', m); } };
 
 vm.runInContext('setupSystem()', ctx);
 ok(ctx.DB_TABLES.every(t => sheets[t] && sheets[t].data[1].join() === ctx.SCHEMA[t].join()), 'setup created every DB sheet with label row + key row');
 ok(sheets.DB_Mentors.getLastRow() === 3, 'default mentor created');
+ok(sheets.LIB_RoadmapTasks && sheets.LIB_RoadmapTasks.getLastRow() === 147 && sheets.LIB_RoadmapTasks.data[1].join() === ctx.SCHEMA.LIB_RoadmapTasks.join(), 'setup creates LIB_RoadmapTasks (145 rows) from the seed');
+ok(sheets.LIB_RoadmapChecklist && sheets.LIB_RoadmapChecklist.getLastRow() === 30, 'setup creates LIB_RoadmapChecklist (28 rows) from the seed');
+ok(sheets.DB_ChecklistScores && sheets.DB_ChecklistScores.data[1].join() === ctx.SCHEMA.DB_ChecklistScores.join(), 'setup creates DB_ChecklistScores');
+{ const before = sheets.LIB_RoadmapTasks.getLastRow(); sheets.LIB_RoadmapTasks.data[2][6] = 'نص معدّل في الشيت'; vm.runInContext('setupSystem()', ctx);
+  ok(sheets.LIB_RoadmapTasks.getLastRow() === before && sheets.LIB_RoadmapTasks.data[2][6] === 'نص معدّل في الشيت', 'running setup again never overwrites the library edited in the sheet'); }
 const call = (fn, ...a) => JSON.parse(vm.runInContext(`api(${JSON.stringify(fn)}, ${JSON.stringify(JSON.stringify(a))})`, ctx));
 const r1 = call('loadTestData');
 ok(r1.ok, 'loadTestData through api bridge: ' + (r1.error || ''));

@@ -71,7 +71,9 @@ var LIBX_ = null;
 function lib_() {
   if (LIBX_) return LIBX_;
   var L = {};
-  LIB_TABLES.forEach(function (t) { L[t] = DB.lib(t); });
+  var used = LIB_TABLES.filter(function (t) { return t !== 'LIB_Examples' && t !== 'LIB_Reconciliation'; });   // reference-only sheets are never read at runtime
+  if (DB.libTables) DB.libTables(used);   // fills the read cache from the script cache in one go (Apps Script only)
+  used.forEach(function (t) { L[t] = DB.lib(t); });
   L.area = index_(L.LIB_Areas, 'AreaID');
   L.problem = index_(L.LIB_Problems, 'ProblemID');
   L.cause = index_(L.LIB_Causes, 'CauseID');
@@ -129,12 +131,16 @@ function stepsText_(taskId) {
 }
 
 /* ------------------------------------------------------------------ bootstrap & projects */
-function apiBootstrap() {
+function apiBootstrap(opts) {
   var L = lib_();
-  var library = {};
+  var ver = DB.libVersion ? DB.libVersion() : '';
+  var library = null;
+  if (!(opts && ver && opts.libVersion === ver)) {   // the browser already has this library version → skip ~350 KB
+    library = {};
   ['LIB_Areas', 'LIB_Problems', 'LIB_Causes', 'LIB_Strategies', 'LIB_Actions', 'LIB_ActionSteps', 'LIB_Routines',
     'LIB_RoutineSteps', 'LIB_KPIs', 'LIB_Sources', 'LIB_Lists', 'LIB_RoadmapTasks', 'LIB_RoadmapChecklist'].forEach(function (t) { library[t] = L[t] || []; });
-  return { library: library, mentors: DB.all('DB_Mentors').filter(function (m) { return m.Active !== C.NO; }),
+  }
+  return { library: library, libVersion: ver, mentors: DB.all('DB_Mentors').filter(function (m) { return m.Active !== C.NO; }),
     user: DB.user(), today: DB.today(), constants: { barriers: C.BARRIERS, statuses: C.TASK_STATUSES, decisions: C.TASK_DECISIONS,
       routineDecisions: C.ROUTINE_DECISIONS, occStatuses: C.OCC_STATUSES, newTasksSoftLimit: C.NEW_TASKS_SOFT_LIMIT,
       roadmapGovs: roadmapGovs_(), checklistValues: C.CL_VALUES, modes: C.MODES, roadmapNewLimit: C.ROADMAP_NEW_LIMIT, roadmapType: C.T_ROADMAP } };

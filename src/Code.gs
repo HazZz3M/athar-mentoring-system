@@ -88,7 +88,13 @@ function getOrCreateFolder_(parent, name) {
 }
 
 /* ---------------- setup ---------------- */
+/** Simple trigger: any edit of a library sheet refreshes the library cache (mentors see it on their next load). */
+function onEdit(e) {
+  try { if (e && e.range && /^LIB_/.test(e.range.getSheet().getName())) invalidateLibCache_(); } catch (x) {}
+}
+
 function setupSystem() {
+  invalidateLibCache_();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', ss.getId());
   var report = [];

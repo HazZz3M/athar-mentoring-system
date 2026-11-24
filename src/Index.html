@@ -144,8 +144,12 @@ function mentorLabel(){var m=S.boot&&S.mentorId?S.boot.mentors.filter(function(x
 /** GitHub Pages app: no sign-in — the mentor picks their name once per device. */
 function pickMentorModal(){var ms=S.boot.mentors.filter(function(m){return m.DataType!=='تجريبي'||S.includeTest});
   modal('<h3>أهلًا! اختار اسمك</h3><div class="sm mut">هيتحفظ على الجهاز ده، وتقدر تغيّره من القائمة فوق.</div><div style="display:grid;gap:6px;margin-top:10px">'+(ms.length?ms:S.boot.mentors).map(function(m){return '<button class="btn sec" data-act="pickMentor" data-v="'+esc(m.MentorID)+'">'+esc(m.MentorName)+'</button>'}).join('')+'</div>');}
+/** The library (~350 KB) is kept in the browser and re-downloaded only when its version changes. */
+function bootLib(){var v=lsGet('athar_libv'),cached=null;if(v){try{cached=JSON.parse(lsGet('athar_lib')||'null')}catch(e){cached=null}}
+  return call('bootstrap',cached?{libVersion:v}:{}).then(function(b){if(b.library){if(b.libVersion){lsSet('athar_lib',JSON.stringify(b.library));lsSet('athar_libv',b.libVersion);}return b;}
+    if(cached){b.library=cached;return b;}return call('bootstrap',{});});}
 function init(){
-  run(call('bootstrap'),'تحميل المكتبة…').then(function(b){S.boot=b;S.L=indexLib(b.library);
+  run(bootLib(),'تحميل المكتبة…').then(function(b){S.boot=b;S.L=indexLib(b.library);
     var sel=document.getElementById('mentorSel');sel.innerHTML='<option value="">كل المنتورين</option>'+b.mentors.map(function(m){return '<option value="'+esc(m.MentorID)+'">'+esc(m.MentorName)+(m.DataType==='تجريبي'?' (تجريبي)':'')+'</option>'}).join('');
     var me=b.mentors.filter(function(m){return m.Email&&m.Email===b.user})[0];
     if(!me&&window.ATHAR_API){var saved=lsGet('athar_mentor');me=b.mentors.filter(function(m){return m.MentorID===saved})[0];}

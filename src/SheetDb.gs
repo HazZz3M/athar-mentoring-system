@@ -29,12 +29,6 @@ function SheetDb_() {
     if (!sheets[t]) { sheets[t] = ss.getSheetByName(t); if (!sheets[t]) throw AppError('الورقة غير موجودة: ' + t + ' — شغّل «إعداد النظام».'); }
     return sheets[t];
   }
-  function keysOf(t) {
-    var sh = sheet(t);
-    var lastCol = sh.getLastColumn();
-    var keys = sh.getRange(2, 1, 1, lastCol).getValues()[0].map(function (k) { return String(k).trim(); });
-    return keys;
-  }
   function fromCell(k, v) {
     if (v instanceof Date) {
       if (TIMESTAMP_FIELDS.indexOf(k) >= 0) return Utilities.formatDate(v, tz, 'yyyy-MM-dd HH:mm');
@@ -54,14 +48,15 @@ function SheetDb_() {
     if (s.length > 49000) s = s.slice(0, 49000);   // Google Sheets cell limit is 50,000 characters
     return s;
   }
-  function load(t) {
+  function load(t) {   // ONE sheet read per table: row 2 = keys, data from row 3
     if (cache[t]) return cache[t];
     var sh = sheet(t);
-    var keys = keysOf(t);
-    var last = sh.getLastRow();
+    var all = sh.getDataRange().getValues();
+    var keys = (all[SHEETDB_HEADER_ROWS - 1] || []).map(function (k) { return String(k).trim(); });
+    while (keys.length && !keys[keys.length - 1]) keys.pop();
     var rows = [];
-    if (last > SHEETDB_HEADER_ROWS) {
-      var vals = sh.getRange(SHEETDB_HEADER_ROWS + 1, 1, last - SHEETDB_HEADER_ROWS, keys.length).getValues();
+    if (all.length > SHEETDB_HEADER_ROWS) {
+      var vals = all.slice(SHEETDB_HEADER_ROWS);
       vals.forEach(function (r, i) {
         if (r[0] === '' || r[0] === null) return;
         var o = { _row: i + SHEETDB_HEADER_ROWS + 1 };
@@ -73,7 +68,18 @@ function SheetDb_() {
     return cache[t];
   }
   function strip(r) { var o = {}; Object.keys(r).forEach(function (k) { if (k !== '_row') o[k] = r[k]; }); return o; }
+  /** Library tables change rarely: kept in the script cache (refreshed on any edit of a LIB_ sheet, on setup, or after 6 h). */
+  function libTables(list) {
+    var ver = libVersion_(), key = 'athar_lib_' + ver, hit = libCacheGet_(key);
+    if (hit) { list.forEach(function (t) { if (hit[t]) cache[t] = { keys: hit[t].keys, rows: hit[t].rows.map(function (r) { var o = {}; hit[t].keys.forEach(function (k, j) { if (k) o[k] = r[j]; }); return o; }) }; }); return hit; }
+    var out = {};
+    list.forEach(function (t) { try { var c = load(t); out[t] = { keys: c.keys, rows: c.rows.map(function (o) { return c.keys.map(function (k) { return k ? o[k] : ''; }); }) }; } catch (e) { out[t] = { keys: [], rows: [] }; } });
+    libCachePut_(key, out);
+    return out;
+  }
   return {
+    libTables: libTables,
+    libVersion: function () { return libVersion_(); },
     all: function (t) { return load(t).rows.map(strip); },
     lib: function (t) { return load(t).rows.map(strip); },
     insert: function (t, rows) {
@@ -121,4 +127,29 @@ function SheetDb_() {
       try { return Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || ''; } catch (e) { return ''; } },
     invalidate: function (t) { if (t) delete cache[t]; else cache = {}; }
   };
+}
+
+/* ---------------- library cache (CacheService: ≤100 KB per value → chunked) ---------------- */
+function libVersion_() {
+  var props = PropertiesService.getScriptProperties(), v = props.getProperty('LIB_VERSION');
+  if (!v) { v = String(Date.now()); props.setProperty('LIB_VERSION', v); }
+  return v;
+}
+function invalidateLibCache_() { PropertiesService.getScriptProperties().setProperty('LIB_VERSION', String(Date.now())); }
+function libCacheGet_(key) {
+  try {
+    var c = CacheService.getScriptCache(), n = +c.get(key + ':n');
+    if (!n) return null;
+    var ks = []; for (var i = 0; i < n; i++) ks.push(key + ':' + i);
+    var got = c.getAll(ks), parts = [];
+    for (var j = 0; j < n; j++) { if (got[ks[j]] === undefined || got[ks[j]] === null) return null; parts.push(got[ks[j]]); }
+    return JSON.parse(parts.join(''));
+  } catch (e) { return null; }
+}
+function libCachePut_(key, obj) {
+  try {
+    var s = JSON.stringify(obj), size = 25000, map = {}, n = Math.ceil(s.length / size);   // 25k chars ≤ 100 KB even for 3-byte Arabic UTF-8
+    for (var i = 0; i < n; i++) map[key + ':' + i] = s.substr(i * size, size);
+    var c = CacheService.getScriptCache(); c.putAll(map, 21600); c.put(key + ':n', String(n), 21600);
+  } catch (e) { /* cache is an optimisation only */ }
 }

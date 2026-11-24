@@ -26,6 +26,7 @@ class Sheet {
   getLastColumn() { return Math.max(0, ...this.data.map(r => (r || []).length)); }
   getMaxRows() { return 1000; }
   getRange(r, c, nr, nc) { return new Range(this, r, c, nr, nc); }
+  getDataRange() { return new Range(this, 1, 1, Math.max(1, this.getLastRow()), Math.max(1, this.getLastColumn())); }
   deleteRow(r) { this.data.splice(r - 1, 1); }
   setFrozenRows() {} setRightToLeft() {}
 }
@@ -42,11 +43,13 @@ const alerts = [];
 const ctx = {
   console, JSON, Math, Date, Object, Array, String, Number, RegExp, Error, isNaN,
   SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, flush() {}, getUi: () => ({ alert: (a, b) => alerts.push(b), ButtonSet: { OK: 1, YES_NO: 2 }, Button: { YES: 'Y' } }) },
-  PropertiesService: { getScriptProperties: () => ({ setProperty() {}, getProperty: () => 'MOCK' }) },
+  PropertiesService: { getScriptProperties: () => ({ setProperty(k, v) { (global.__props = global.__props || {})[k] = v; }, getProperty: (k) => (global.__props || {})[k] || (k === 'SPREADSHEET_ID' ? 'MOCK' : null) }) },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   Session: { getActiveUser: () => ({ getEmail: () => 'mentor@athareg.com' }), getEffectiveUser: () => ({ getEmail: () => 'mentor@athareg.com' }), getScriptTimeZone: () => 'Africa/Cairo' },
   Utilities: { formatDate: (d, tz, f) => { const s = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); return f.includes('HH') ? s + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : s; } },
   ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/mock' }) },
+  CacheService: { getScriptCache: () => ({ store: (global.__cache = global.__cache || {}), get(k) { return this.store[k] === undefined ? null : this.store[k]; }, getAll(ks) { const o = {}; ks.forEach(k => { if (this.store[k] !== undefined) o[k] = this.store[k]; }); return o; },
+    put(k, v) { this.store[k] = v; }, putAll(m) { Object.assign(this.store, m); } }) },
   ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ t, setMimeType() { return this; }, getContent() { return this.t; } }) }
 };
 vm.createContext(ctx);
@@ -109,6 +112,22 @@ fs.writeFileSync(path.join(__dirname, 'dashboard_sheet.json'), JSON.stringify(da
   ok(!!savedRow, 'a finalized session exists for the autosave check');
   const r = savedRow ? call('saveDraft', savedRow[sk.indexOf('SessionID')], '{}') : { ok: true };
   ok(!r.ok && /محفوظة/.test(r.error), 'autosave cannot overwrite a finalized session');
+}
+// ---- library cache: second call reads no library sheet
+{
+  const reads = {}; const orig = Sheet.prototype.getDataRange;
+  Sheet.prototype.getDataRange = function () { reads[this.name] = (reads[this.name] || 0) + 1; return orig.call(this); };
+  vm.runInContext("useSheets_(); lib_();", ctx);
+  Object.keys(reads).forEach(k => delete reads[k]);
+  vm.runInContext("useSheets_(); lib_();", ctx);
+  ok(!Object.keys(reads).some(k => k.startsWith('LIB_')), 'library served from the script cache (no LIB_ sheet read) — read: ' + Object.keys(reads).join(','));
+  const b1 = JSON.parse(vm.runInContext("api('bootstrap', '[]')", ctx)).data;
+  const b2 = JSON.parse(vm.runInContext("api('bootstrap', JSON.stringify([{libVersion: '" + b1.libVersion + "'}]))", ctx)).data;
+  ok(b1.library && b1.libVersion && b2.library === null, 'bootstrap skips the library when the browser already has this version');
+  vm.runInContext("invalidateLibCache_()", ctx);
+  const b3 = JSON.parse(vm.runInContext("api('bootstrap', JSON.stringify([{libVersion: '" + b1.libVersion + "'}]))", ctx)).data;
+  ok(b3.library && b3.libVersion !== b1.libVersion, 'editing a LIB_ sheet (new version) sends the library again');
+  Sheet.prototype.getDataRange = orig;
 }
 // ---- GitHub Pages JSON API (no sign-in; mentor picks a name)
 {

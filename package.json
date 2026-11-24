@@ -1,0 +1,8 @@
+{
+  "name": "athar-mentoring-system",
+  "private": true,
+  "description": "Athar Integrated Mentoring & Business Performance Management System (Google Sheets + Apps Script)",
+  "scripts": {
+    "test": "node tests/run_tests.js && node tests/run_sheetdb_test.js"
+  }
+}

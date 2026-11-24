@@ -117,7 +117,7 @@ function SheetDb_() {
     },
     now: function () { return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm'); },
     today: function () { return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'); },
-    user: function () { if (typeof REQUEST_USER_ !== 'undefined' && REQUEST_USER_) return REQUEST_USER_;
+    user: function () { if (typeof WEB_REQUEST_ !== 'undefined' && WEB_REQUEST_) return REQUEST_USER_ || 'منتور (بدون اسم)';
       try { return Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || ''; } catch (e) { return ''; } },
     invalidate: function (t) { if (t) delete cache[t]; else cache = {}; }
   };

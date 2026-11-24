@@ -5,6 +5,7 @@
  */
 var DB = null;
 var REQUEST_USER_ = '';   // mentor chosen on the GitHub Pages app (no sign-in): used for «CreatedBy» and the history log
+var WEB_REQUEST_ = false; // true inside doPost: never fall back to the script owner's account as «the user»
 var APP_TITLE = 'أثر — نظام المنتورينج ومتابعة الأداء';
 
 function useSheets_() { DB = SheetDb_(); resetLibCache_(); return DB; }
@@ -46,6 +47,7 @@ function doGet(e) {
 function doPost(e) {
   var body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (x) { body = {}; }
+  WEB_REQUEST_ = true;
   REQUEST_USER_ = String(body.user || '').slice(0, 120);
   var out = body.fn ? api(String(body.fn), JSON.stringify(body.args || [])) : JSON.stringify({ ok: false, error: 'طلب غير صالح' });
   return ContentService.createTextOutput(out).setMimeType(ContentService.MimeType.JSON);

@@ -120,7 +120,9 @@ fs.writeFileSync(path.join(__dirname, 'dashboard_sheet.json'), JSON.stringify(da
   const pk = ctx.SCHEMA.DB_Projects;
   ok(pr.ok && sheets.DB_Projects.data.some(r => r[pk.indexOf('ProjectID')] === pr.data.ProjectID && r[pk.indexOf('CreatedBy')] === 'سارة (M-001)'), 'doPost writes through the same locked API and records who did it');
   ok(post({ fn: 'nope', args: [] }).ok === false && post({}).ok === false, 'unknown or empty requests are refused');
-  vm.runInContext("REQUEST_USER_=''", ctx);
+  const anon = post({ fn: 'bootstrap', args: [] });
+  ok(anon.data.user !== 'mentor@athareg.com', 'a web visitor who has not picked a name is never taken for the script owner (got ' + anon.data.user + ')');
+  vm.runInContext("REQUEST_USER_='';WEB_REQUEST_=false", ctx);
 }
 console.log(`SheetDb RESULT: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

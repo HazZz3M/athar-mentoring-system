@@ -48,6 +48,10 @@ const ctx = {
   Session: { getActiveUser: () => ({ getEmail: () => 'mentor@athareg.com' }), getEffectiveUser: () => ({ getEmail: () => 'mentor@athareg.com' }), getScriptTimeZone: () => 'Africa/Cairo' },
   Utilities: { formatDate: (d, tz, f) => { const s = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); return f.includes('HH') ? s + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : s; } },
   ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/mock' }) },
+  Sheets: { Spreadsheets: { Values: { batchGet: (id, req) => { global.__batch = (global.__batch || 0) + 1;
+    const ser = d => (Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()) / 86400000) + 25569;
+    return { valueRanges: req.ranges.map(r => { const name = r.match(/^'(.+)'!/)[1]; const sh = sheets[name];
+      return { values: sh ? sh.data.map(row => (row || []).map(v => v instanceof Date ? ser(v) : v)) : [] }; }) }; } } } },
   CacheService: { getScriptCache: () => ({ store: (global.__cache = global.__cache || {}), get(k) { return this.store[k] === undefined ? null : this.store[k]; }, getAll(ks) { const o = {}; ks.forEach(k => { if (this.store[k] !== undefined) o[k] = this.store[k]; }); return o; },
     put(k, v) { this.store[k] = v; }, putAll(m) { Object.assign(this.store, m); } }) },
   ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ t, setMimeType() { return this; }, getContent() { return this.t; } }) }
@@ -112,6 +116,16 @@ fs.writeFileSync(path.join(__dirname, 'dashboard_sheet.json'), JSON.stringify(da
   ok(!!savedRow, 'a finalized session exists for the autosave check');
   const r = savedRow ? call('saveDraft', savedRow[sk.indexOf('SessionID')], '{}') : { ok: true };
   ok(!r.ok && /محفوظة/.test(r.error), 'autosave cannot overwrite a finalized session');
+}
+// ---- all DB_ tables come from one batch call per request (and per lock)
+{
+  global.__batch = 0;
+  const reads = {}; const orig = Sheet.prototype.getDataRange;
+  Sheet.prototype.getDataRange = function () { reads[this.name] = 1; return orig.call(this); };
+  const j2 = JSON.parse(vm.runInContext("api('journey', JSON.stringify(['" + sheets.DB_Projects.data[2][0] + "']))", ctx));
+  ok(j2.ok && global.__batch === 1 && !Object.keys(reads).some(k => k.startsWith('DB_')), 'journey: all DB_ tables in ONE batch call, no per-sheet reads (batch=' + global.__batch + ')');
+  ok(j2.data.sessions.every(x => /^\d{4}-\d{2}-\d{2}$/.test(x.SessionDate)) && j2.data.sessions.every(x => !x.CreatedAt || /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/.test(x.CreatedAt)), 'batch path: serial dates converted back to yyyy-mm-dd');
+  Sheet.prototype.getDataRange = orig;
 }
 // ---- library cache: second call reads no library sheet
 {

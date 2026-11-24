@@ -29,7 +29,13 @@ function SheetDb_() {
     if (!sheets[t]) { sheets[t] = ss.getSheetByName(t); if (!sheets[t]) throw AppError('الورقة غير موجودة: ' + t + ' — شغّل «إعداد النظام».'); }
     return sheets[t];
   }
-  function fromCell(k, v) {
+  function fromCell(k, v, serial) {
+    if (serial && typeof v === 'number' && (DATE_FIELDS.indexOf(k) >= 0 || TIMESTAMP_FIELDS.indexOf(k) >= 0)) {   // Sheets API serial date → wall-clock text
+      var d = new Date(Math.round((v - 25569) * 86400000));
+      var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+      var ds = d.getUTCFullYear() + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate());
+      return TIMESTAMP_FIELDS.indexOf(k) >= 0 ? ds + ' ' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes()) : ds;
+    }
     if (v instanceof Date) {
       if (TIMESTAMP_FIELDS.indexOf(k) >= 0) return Utilities.formatDate(v, tz, 'yyyy-MM-dd HH:mm');
       return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
@@ -48,8 +54,34 @@ function SheetDb_() {
     if (s.length > 49000) s = s.slice(0, 49000);   // Google Sheets cell limit is 50,000 characters
     return s;
   }
-  function load(t) {   // ONE sheet read per table: row 2 = keys, data from row 3
+  /** All DB_ tables in ONE Sheets API call (advanced service) instead of one read per sheet. Falls back to per-sheet reads. */
+  var batchTried = false;
+  function preloadDb() {
+    if (batchTried) return; batchTried = true;
+    if (typeof Sheets === 'undefined' || !Sheets.Spreadsheets) return;
+    var names = DB_TABLES.filter(function (t) { return !cache[t]; });
+    if (!names.length) return;
+    try {
+      var resp = Sheets.Spreadsheets.Values.batchGet(ss.getId(), { ranges: names.map(function (t) { return "'" + t + "'!A1:ZZ"; }),
+        valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER' });
+      (resp.valueRanges || []).forEach(function (vr, i) { cache[names[i]] = build(vr.values || [], true); });
+    } catch (e) { console.warn('batchGet failed, per-sheet reads', e && e.message); }
+  }
+  function build(all, serial) {
+    var keys = (all[SHEETDB_HEADER_ROWS - 1] || []).map(function (k) { return String(k).trim(); });
+    while (keys.length && !keys[keys.length - 1]) keys.pop();
+    var rows = [];
+    all.slice(SHEETDB_HEADER_ROWS).forEach(function (r, i) {
+      if (r[0] === '' || r[0] === null || r[0] === undefined) return;
+      var o = { _row: i + SHEETDB_HEADER_ROWS + 1 };
+      keys.forEach(function (k, j) { if (k) o[k] = fromCell(k, r[j], serial); });
+      rows.push(o);
+    });
+    return { keys: keys, rows: rows };
+  }
+  function load(t) {   // ONE read per table (or one batch for all DB_ tables): row 2 = keys, data from row 3
     if (cache[t]) return cache[t];
+    if (/^DB_/.test(t)) { preloadDb(); if (cache[t]) return cache[t]; }
     var sh = sheet(t);
     var all = sh.getDataRange().getValues();
     var keys = (all[SHEETDB_HEADER_ROWS - 1] || []).map(function (k) { return String(k).trim(); });
@@ -118,14 +150,14 @@ function SheetDb_() {
       if (lockDepth > 0) { lockDepth++; try { return fn(); } finally { lockDepth--; } }
       var lock = LockService.getScriptLock();
       if (!lock.tryLock(45000)) throw AppError('النظام مشغول بحفظ آخر؛ حاول مرة أخرى بعد لحظات.');
-      lockDepth = 1; cache = {};
+      lockDepth = 1; cache = {}; batchTried = false;
       try { var res = fn(); SpreadsheetApp.flush(); return res; } finally { lockDepth = 0; lock.releaseLock(); }
     },
     now: function () { return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm'); },
     today: function () { return Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'); },
     user: function () { if (typeof WEB_REQUEST_ !== 'undefined' && WEB_REQUEST_) return REQUEST_USER_ || 'منتور (بدون اسم)';
       try { return Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || ''; } catch (e) { return ''; } },
-    invalidate: function (t) { if (t) delete cache[t]; else cache = {}; }
+    invalidate: function (t) { if (t) delete cache[t]; else { cache = {}; batchTried = false; } }
   };
 }
 

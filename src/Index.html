@@ -151,7 +151,7 @@ function init(){
     if(!me&&window.ATHAR_API){var saved=lsGet('athar_mentor');me=b.mentors.filter(function(m){return m.MentorID===saved})[0];}
     if(me){S.mentorId=me.MentorID;sel.value=me.MentorID;}
     if(window.DEMO_MODE){S.includeTest=true;document.getElementById('testChk').checked=true;}
-    go('projects');if(window.ATHAR_API&&!me)pickMentorModal();});
+    S.needPick=!!(window.ATHAR_API&&!me);go('projects');});
 }
 function go(v){if(S.view==='session'&&v!=='session'&&S.dirty){saveDraft(true);}S.view=v;['projects','dashboard'].forEach(function(n){document.getElementById('nav-'+n).classList.toggle('on',n===v||(n==='projects'&&(v==='journey'||v==='session'||v==='plan')))});
   if(v==='projects')loadProjects();else if(v==='dashboard')loadDash();else render();window.scrollTo(0,0);}
@@ -161,7 +161,7 @@ function render(){var a=document.getElementById('app'),f=document.getElementById
   if(S.view==='plan'&&S.plan){var fr=document.getElementById('planFrame');if(fr)fr.srcdoc=S.plan.mode==='a4'&&S.plan.a4?S.plan.a4:S.plan.html;}}
 
 /* ============================================================ projects */
-function loadProjects(){run(call('listProjects',{includeTest:S.includeTest}),'تحميل المشروعات…').then(function(p){S.projects=p;render();});}
+function loadProjects(){run(call('listProjects',{includeTest:S.includeTest}),'تحميل المشروعات…').then(function(p){S.projects=p;render();if(S.needPick){S.needPick=false;pickMentorModal();}});}
 function vProjects(){var q=S.q.trim();var list=S.projects.filter(function(p){return (!S.mentorId||p.MentorID===S.mentorId)&&(!q||(p.ProjectName+' '+p.OwnerName+' '+p.BusinessType+' '+p.Governorate+' '+p.ProjectID).indexOf(q)>=0)});
   var h='<div class="row"><h2 class="grow">المشروعات ('+list.length+')</h2><button class="btn" data-act="newProject">+ مشروع جديد</button></div>';
   h+='<input type="text" placeholder="ابحث باسم المشروع أو صاحبه أو النشاط أو المحافظة…" value="'+esc(S.q)+'" data-act="searchProjects" id="pq">';

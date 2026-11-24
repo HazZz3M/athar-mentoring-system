@@ -9,6 +9,11 @@
 :root{--pri:#145a63;--pri2:#1d7480;--pri-l:#e7f1f2;--acc:#c7902b;--acc-l:#fbf3e3;--ok:#2f8a55;--ok-l:#e6f4ec;--warn:#b7791f;--warn-l:#fdf3e1;--bad:#b4413a;--bad-l:#fbe9e7;
 --ink:#1c2a2f;--mut:#617076;--line:#d9e4e6;--bg:#f5f8f8;--card:#fff;--r:10px}
 *{box-sizing:border-box}html,body{margin:0;padding:0}
+body.simple .adv{display:none!important}body:not(.simple) .smp{display:none!important}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}.pcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.pcard .own{font-size:19px;font-weight:700;color:var(--pri)}.bigbtn{display:block;width:100%;font-size:17px;padding:12px;border-radius:10px;border:1px solid var(--pri);background:#fff;color:var(--pri);cursor:pointer;margin:6px 0}
+.bigbtn:hover{background:var(--pri-l)}.sh{display:flex;align-items:center;gap:8px;margin:0 0 6px}.sh .n{width:28px;height:28px;border-radius:50%;background:var(--pri);color:#fff;display:grid;place-items:center;font-weight:700;flex:none}
+.sh h3{margin:0}.savebar{position:sticky;bottom:0;background:#fffffff0;border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;z-index:15}
 body{font-family:"Noto Naskh Arabic","Segoe UI",Tahoma,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14.5px;line-height:1.6}
 button,input,select,textarea{font:inherit;color:inherit}
 a{color:var(--pri2)}
@@ -72,11 +77,14 @@ iframe.plan{width:100%;height:72vh;border:1px solid var(--line);border-radius:va
 <body>
 <div class="top">
   <div class="brand"><div class="logo">أثر</div><span class="t">نظام المنتورينج ومتابعة الأداء</span></div>
-  <button class="navb" data-act="nav" data-v="projects" id="nav-projects">المشروعات</button>
-  <button class="navb" data-act="nav" data-v="dashboard" id="nav-dashboard">لوحة المؤشرات</button>
+  <button class="navb adv" data-act="nav" data-v="projects" id="nav-projects">المشروعات</button>
+  <button class="navb adv" data-act="nav" data-v="dashboard" id="nav-dashboard">لوحة المؤشرات</button>
+  <button class="navb smp" data-act="home">مشروعاتي</button>
   <div class="sp"></div>
-  <label class="sm">المنتور:</label><select id="mentorSel" data-act="mentor"></select>
-  <label class="sm"><input type="checkbox" id="testChk" data-act="toggleTest"> عرض البيانات التجريبية</label>
+  <span class="smp sm" id="whoami"></span>
+  <label class="sm adv">المنتور:</label><select id="mentorSel" data-act="mentor" class="adv"></select>
+  <label class="sm adv"><input type="checkbox" id="testChk" data-act="toggleTest"> عرض البيانات التجريبية</label>
+  <button class="navb" data-act="uiMode" id="modeBtn">وضع متقدم</button>
 </div>
 <div id="app" class="wrap"><div class="card">جارٍ التحميل…</div></div>
 <div id="foot"></div>
@@ -146,8 +154,8 @@ function pickMentorModal(){var ms=S.boot.mentors.filter(function(m){return m.Dat
   modal('<h3>أهلًا! اختار اسمك</h3><div class="sm mut">هيتحفظ على الجهاز ده، وتقدر تغيّره من القائمة فوق.</div><div style="display:grid;gap:6px;margin-top:10px">'+(ms.length?ms:S.boot.mentors).map(function(m){return '<button class="btn sec" data-act="pickMentor" data-v="'+esc(m.MentorID)+'">'+esc(m.MentorName)+'</button>'}).join('')+'</div>');}
 /** The library (~350 KB) is kept in the browser and re-downloaded only when its version changes. */
 function bootLib(){var v=lsGet('athar_libv'),cached=null;if(v){try{cached=JSON.parse(lsGet('athar_lib')||'null')}catch(e){cached=null}}
-  return call('bootstrap',cached?{libVersion:v}:{}).then(function(b){if(b.library){if(b.libVersion){lsSet('athar_lib',JSON.stringify(b.library));lsSet('athar_libv',b.libVersion);}return b;}
-    if(cached){b.library=cached;return b;}return call('bootstrap',{});});}
+  return call('bootstrap',cached?{libVersion:v,withProjects:true}:{withProjects:true}).then(function(b){if(b.library){if(b.libVersion){lsSet('athar_lib',JSON.stringify(b.library));lsSet('athar_libv',b.libVersion);}return b;}
+    if(cached){b.library=cached;return b;}return call('bootstrap',{withProjects:true});});}
 function init(){
   run(bootLib(),'تحميل المكتبة…').then(function(b){S.boot=b;S.L=indexLib(b.library);
     var sel=document.getElementById('mentorSel');sel.innerHTML='<option value="">كل المنتورين</option>'+b.mentors.map(function(m){return '<option value="'+esc(m.MentorID)+'">'+esc(m.MentorName)+(m.DataType==='تجريبي'?' (تجريبي)':'')+'</option>'}).join('');
@@ -155,14 +163,19 @@ function init(){
     if(!me&&window.ATHAR_API){var saved=lsGet('athar_mentor');me=b.mentors.filter(function(m){return m.MentorID===saved})[0];}
     if(me){S.mentorId=me.MentorID;sel.value=me.MentorID;}
     if(window.DEMO_MODE){S.includeTest=true;document.getElementById('testChk').checked=true;}
+    S.mode=lsGet('athar_mode')==='adv'?'adv':'simple';
+    if(S.mode==='simple'){S.projects=b.projects||[];S.view='home';render();return;}
     S.needPick=!!(window.ATHAR_API&&!me);go('projects');});
 }
 function go(v){if(S.view==='session'&&v!=='session'&&S.dirty){saveDraft(true);}S.view=v;['projects','dashboard'].forEach(function(n){document.getElementById('nav-'+n).classList.toggle('on',n===v||(n==='projects'&&(v==='journey'||v==='session'||v==='plan')))});
   if(v==='projects')loadProjects();else if(v==='dashboard')loadDash();else render();window.scrollTo(0,0);}
 function render(){var a=document.getElementById('app'),f=document.getElementById('foot');f.innerHTML='';
+  document.body.classList.toggle('simple',S.mode==='simple');var mb=document.getElementById('modeBtn');if(mb)mb.textContent=S.mode==='simple'?'وضع متقدم':'الوضع البسيط';
+  var who=document.getElementById('whoami');if(who){var me=S.boot&&S.mentorId?S.boot.mentors.filter(function(m){return m.MentorID===S.mentorId})[0]:null;who.innerHTML=me?'👤 '+esc(me.MentorName)+' <a href="#" data-act="changeMentor" style="color:#fff">(تغيير)</a>':'';}
+  if(S.view==='home'){a.innerHTML=vHome();return;}if(S.view==='ss'){a.innerHTML=vSS();f.innerHTML=vSSBar();return;}
   if(S.view==='projects')a.innerHTML=vProjects();else if(S.view==='journey')a.innerHTML=vJourney();else if(S.view==='session'){a.innerHTML=vSession();f.innerHTML=vFoot();}
   else if(S.view==='plan')a.innerHTML=vPlan();else if(S.view==='dashboard')a.innerHTML=vDash();
-  if(S.view==='plan'&&S.plan){var fr=document.getElementById('planFrame');if(fr)fr.srcdoc=S.plan.mode==='a4'&&S.plan.a4?S.plan.a4:S.plan.html;}}
+  if(S.view==='plan'&&S.plan){var fr=document.getElementById('planFrame');if(fr)fr.srcdoc=(S.mode==='simple'||S.plan.mode==='a4')&&S.plan.a4?S.plan.a4:S.plan.html;}}
 
 /* ============================================================ projects */
 function loadProjects(){run(call('listProjects',{includeTest:S.includeTest}),'تحميل المشروعات…').then(function(p){S.projects=p;render();if(S.needPick){S.needPick=false;pickMentorModal();}});}
@@ -190,7 +203,7 @@ function newProjectForm(){var types=S.L.lists['أنواع المشروعات']||
   '<div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn sec" data-act="closeModal">إلغاء</button><button class="btn" data-act="saveProject">حفظ المشروع</button></div>');}
 function fld(l,id,v,req){return '<div><label class="f'+(req?' req':'')+'">'+l+'</label><input type="text" id="'+id+'" value="'+esc(v)+'"></div>';}
 function saveProject(){var p={};['ProjectName','OwnerName','Phone','BusinessType','Governorate','Location','Round','MentorID','StartDate','Description','ProjectMode'].forEach(function(k){p[k]=document.getElementById('np_'+k).value});
-  run(call('createProject',p),'حفظ…').then(function(r){closeModal();toast('تم إنشاء المشروع '+r.ProjectID);openProject(r.ProjectID);});}
+  run(call('createProject',p),'حفظ…').then(function(r){closeModal();toast('تم إنشاء المشروع '+r.ProjectID);if(S.mode==='simple'){S.q='';refreshHome();}else openProject(r.ProjectID);});}
 
 /* ============================================================ journey */
 function openProject(id){run(call('journey',id),'فتح رحلة المشروع…').then(function(j){S.journey=j;S.view='journey';S.jtab='journey';S.jf={session:'',area:'',status:'',type:'',q:''};S.openCards={};
@@ -287,7 +300,7 @@ function applyModeNA(d,ctx){(ctx.checklistItems||[]).forEach(function(it){var c=
   if(!appliesMode(it.AppliesTo,d.projectMode)){if(!c.Value||c.auto){c.Value='مش بيخصه';c.auto=1;}}else if(c.auto){c.Value='';delete c.auto;}});}
 function saveDraft(silent){if(!S.ctx)return;S.d.step=S.step;var sid=S.ctx.session.SessionID;var p=call('saveDraft',sid,JSON.stringify(S.d)).then(function(r){S.dirty=false;S.lastSaved=r.savedAt;var el=document.getElementById('saveState');if(el)el.textContent='حُفظت المسودة '+r.savedAt.slice(11);if(!silent)toast('تم حفظ المسودة');});
   if(!silent)run(p,'حفظ المسودة…');}
-setInterval(function(){if(S.view==='session'&&S.dirty)saveDraft(true);},45000);
+setInterval(function(){if((S.view==='session'||S.view==='ss')&&S.dirty)saveDraft(true);},45000);
 function vFoot(){return '<div class="foot"><button class="btn sec" data-act="prevStep" '+(S.step===1?'disabled':'')+'>السابق</button><button class="btn" data-act="nextStep" '+(S.step===10?'disabled':'')+'>التالي ←</button>'+
   '<span class="grow sm mut" id="saveState">'+(S.lastSaved?'حُفظت المسودة '+esc(S.lastSaved.slice(11)):'المسودة تُحفظ تلقائيًا')+'</span><button class="btn sm sec" data-act="saveDraft">حفظ المسودة</button><button class="btn sm ghost" data-act="exitSession">خروج</button></div>';}
 function reviewProgress(){var c=S.ctx,d=S.d;var n=c.openAssignments.filter(function(a){var r=d.reviews[a.AssignmentID];return r.Status&&r.Decision}).length;
@@ -535,7 +548,8 @@ function st10(){var e=clientChecks(),w=clientWarnings();return '<div class="card
 
 /* ============================================================ plan */
 function openPlan(sid){Promise.all([call('planHtml',sid),call('planText',sid),call('plan',sid)]).then(function(r){S.plan={sid:sid,html:r[0],text:r[1],data:r[2]};S.view='plan';render();window.scrollTo(0,0);}).catch(showErr);}
-function vPlan(){var p=S.plan;if(!p)return '';var phone=(S.journey&&S.journey.project.Phone||'').replace(/\D/g,'');if(phone.indexOf('0')===0)phone='2'+phone;
+function vPlan(){var p=S.plan;if(!p)return '';
+  if(S.mode==='simple')return '<div class="row noprint"><button class="btn ghost" data-act="home">→ مشروعاتي</button><span class="grow"></span><button class="btn" data-act="printPlan">🖨 طباعة ورقة الجلسة</button>'+(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">حفظ PDF في Drive</button>')+'<button class="btn sec" data-act="copyPlan">نسخ نص لواتساب</button></div><iframe class="plan" id="planFrame" title="ورقة الجلسة" style="height:80vh"></iframe>';var phone=(S.journey&&S.journey.project.Phone||'').replace(/\D/g,'');if(phone.indexOf('0')===0)phone='2'+phone;
   var a4=p.mode==='a4';
   return '<div class="row noprint"><button class="btn ghost" data-act="backToJourney">→ رحلة المشروع</button><span class="chip'+(a4?'':' on')+'" data-act="planMode" data-v="plan">الخطة الكاملة</span><span class="chip'+(a4?' on':'')+'" data-act="planMode" data-v="a4">📄 ملخص الجلسة (ورقة A4)</span><span class="grow"></span><button class="btn sec" data-act="printPlan">🖨 طباعة / حفظ PDF من المتصفح</button>'+(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">📄 حفظ PDF في Drive</button>')+
   '<button class="btn sec" data-act="copyPlan">📋 نسخ نص الخطة</button><a class="btn" style="text-decoration:none" target="_blank" href="https://wa.me/'+(phone||'')+'?text='+encodeURIComponent(p.text)+'">واتساب</a></div><iframe class="plan" id="planFrame" title="الخطة الأسبوعية"></iframe>';}
@@ -562,6 +576,101 @@ function vDash(){var D=S.dash;if(!D)return '';var m=D.metrics,f=S.df;var ps=S.pr
 function rateTile(v,l,sub){var c=v===null?'':v>=70?'ok':v>=40?'warn':'bad';return '<div class="tile '+c+'"><div class="n">'+pct(v)+'</div><div class="l">'+esc(l)+'</div><div class="bar" style="margin-top:4px"><i style="width:'+(v||0)+'%"></i></div><div class="sm mut">'+esc(sub)+'</div></div>';}
 function barCard(t,arr){var mx=Math.max.apply(null,[1].concat(arr.map(function(x){return x.count})));return '<div class="card" style="margin:0"><h4 style="margin-top:0">'+esc(t)+'</h4>'+(arr.length?arr.slice(0,8).map(function(x){return '<div class="sm">'+esc(x.name)+' <b>('+x.count+')</b></div><div class="bar" style="margin-bottom:5px"><i style="width:'+(x.count/mx*100)+'%"></i></div>'}).join(''):'<div class="sm mut">لا توجد بيانات.</div>')+'</div>';}
 
+/* ============================================================ SIMPLE MODE (default for mentors)
+   name → project → one page with every part of the session → save → full session sheet to print */
+function myProjects(){return S.projects.filter(function(p){return !S.mentorId||p.MentorID===S.mentorId});}
+function refreshHome(){run(call('listProjects',{includeTest:S.includeTest}),'تحميل المشروعات…').then(function(p){S.projects=p;render()});}
+function vHome(){var ms=S.boot.mentors.filter(function(m){return m.DataType!=='تجريبي'||S.includeTest});
+  if(!S.mentorId)return '<div class="card" style="max-width:520px;margin:30px auto"><h2 style="margin-top:0">أهلًا! اختار اسمك</h2><div class="sm mut">هيتحفظ على الجهاز ده.</div>'+
+    (ms.length?ms:S.boot.mentors).map(function(m){return '<button class="bigbtn" data-act="pickMentor" data-v="'+esc(m.MentorID)+'">'+esc(m.MentorName)+'</button>'}).join('')+'</div>';
+  var q=normAr(S.q||''),mine=myProjects(),list=(mine.length?mine:S.projects).filter(function(p){return !q||normAr(p.OwnerName+' '+p.ProjectName+' '+(p.Governorate||'')).indexOf(q)>=0});
+  var h='<div class="row"><h2 class="grow" style="margin:6px 0">'+(mine.length?'مشروعاتك':'كل المشروعات')+' ('+list.length+')</h2><button class="btn" data-act="newProject">+ مشروع جديد</button></div>'+
+    (mine.length?'':'<div class="sm mut">مفيش مشروعات متسجلة باسمك لسه — دي كل المشروعات.</div>')+
+    '<input type="text" id="pq" data-act="searchProjects" value="'+esc(S.q||'')+'" placeholder="دوّر باسم صاحب المشروع أو المشروع" style="margin:8px 0 12px">';
+  h+='<div class="pgrid">'+list.map(function(p){var nx=p.DraftSessionID?'كمّل الجلسة '+(p.LastSessionNo+1):'ابدأ الجلسة '+(p.LastSessionNo+1);
+    return '<div class="pcard"><div class="own">'+esc(p.OwnerName)+'</div><div>'+esc(p.ProjectName)+'</div><div class="sm mut">'+esc(p.BusinessType||'')+(p.Governorate?' — '+esc(p.Governorate):'')+'</div>'+
+      '<div class="sm">'+(p.LastSessionDate?'آخر جلسة: '+esc(p.LastSessionDate)+' (رقم '+p.LastSessionNo+')':'لسه مفيش جلسات')+(p.OpenTasks?' · '+p.OpenTasks+' مهام مفتوحة':'')+'</div>'+
+      '<div class="row" style="margin-top:6px"><button class="btn" data-act="ssStart" data-v="'+esc(p.ProjectID)+'" data-d="'+esc(p.DraftSessionID||'')+'">'+nx+'</button>'+
+      (p.LastSessionNo?'<button class="btn sec" data-act="openSheet" data-v="'+esc(p.ProjectID+'-S'+(p.LastSessionNo<10?'0':'')+p.LastSessionNo)+'">ورقة آخر جلسة</button>':'')+'</div></div>'}).join('')+'</div>';
+  if(!list.length)h+='<div class="card mut">مفيش نتايج.</div>';
+  return h;}
+function ssStart(pid,draftId){var p=draftId?call('getDraft',draftId):call('startSession',pid,S.mentorId,S.boot.today);
+  run(p,'تحضير الجلسة…').then(function(ctx){S.ctx=ctx;S.d=upgradeDraft(ctx.draft||newDraft(ctx),ctx);S.d.mode='simple';S.view='ss';S.dirty=false;S.openCards={};S.ssErr=null;render();window.scrollTo(0,0);});}
+function openSheet(sid){run(call('sessionSheetHtml',sid),'تجهيز ورقة الجلسة…').then(function(h){S.plan={sid:sid,a4:h,mode:'a4'};S.view='plan';render();window.scrollTo(0,0)});}
+function sec(n,title,body,sub){return '<div class="card"><div class="sh"><span class="n">'+n+'</span><h3>'+title+'</h3></div>'+(sub?'<div class="sm mut" style="margin-bottom:6px">'+sub+'</div>':'')+body+'</div>';}
+function chipsL(path,pairs,deflt){var v=getP(S.d,path)||deflt||'';return pairs.map(function(o){return '<span class="chip'+(v===o[0]?' on':'')+'" data-act="chip" data-path="'+path+'" data-v="'+esc(o[0])+'">'+esc(o[1])+'</span>'}).join('');}
+var SS_STATUS=[['مكتملة','اتعملت ✓'],['مكتملة جزئيًا','جزئي'],['قيد التنفيذ','شغال فيها'],['لم تبدأ','لسه'],['متعثرة','متعطلة']];
+function stepsOf(a){var st=S.L.steps[a.TaskID]||[];if(st.length)return '<ol class="steps sm">'+st.map(function(x){return '<li><b>'+esc(x.StepTitle)+':</b> '+esc(x.Instruction)+'</li>'}).join('')+'</ol>';
+  return a.StepsSnapshot||a.CustomInstructions?'<div class="sm" style="white-space:pre-line">'+esc(a.StepsSnapshot||a.CustomInstructions)+'</div>':'';}
+function vSS(){var c=S.ctx,d=S.d,p=c.project,L=S.L,n=0,h='';
+  h+='<div class="row"><button class="btn ghost" data-act="home">→ مشروعاتي</button><h2 class="grow" style="margin:0">'+esc(p.OwnerName)+' <span class="mut" style="font-size:15px">— '+esc(p.ProjectName)+' · الجلسة '+c.session.SessionNo+'</span>'+(p.DataType==='تجريبي'?' <span class="testflag">تجريبي</span>':'')+'</h2></div>';
+  // 1 dates
+  h+=sec(++n,'الجلسة','<div class="grid g3"><div><label class="f req">تاريخ الجلسة</label>'+inp('sessionDate','date')+'</div><div><label class="f req">الجلسة الجاية</label>'+inp('planEnd','date')+'</div>'+
+    (c.isRoadmap?'<div><label class="f">بعد يوم التدريب</label><select data-bind="afterTrainingDay"><option value=""></option>'+trainingDays().map(function(x){return '<option'+(d.afterTrainingDay===x?' selected':'')+'>'+esc(x)+'</option>'}).join('')+'</select></div>':'')+'</div>');
+  // 2 previous tasks
+  if(c.openAssignments.length)h+=sec(++n,'المهام اللي فاتت ('+c.openAssignments.length+')',c.openAssignments.map(function(a){var P='reviews|'+a.AssignmentID+'|',r=d.reviews[a.AssignmentID],k='ssr_'+a.AssignmentID;
+    return '<div class="card flat" style="padding:8px 10px"><div class="row"><b class="grow">'+esc(a.TaskName)+'</b><span class="sm mut">من جلسة '+a.SessionNo+' · ميعادها '+esc(a.CurrentDeadline||a.OriginalDeadline||'')+'</span><button class="btn sm ghost" data-act="toggle" data-v="'+k+'">'+(S.openCards[k]?'إخفاء الخطوات':'الخطوات')+'</button></div>'+
+      (S.openCards[k]?stepsOf(a):'')+'<div style="margin:4px 0"><span class="sm">اتعملت؟ </span>'+chipsL(P+'Status',SS_STATUS)+'</div>'+
+      (r.Status&&r.Status!=='مكتملة'?'<div style="margin:4px 0"><span class="sm">هتعمل فيها إيه؟ </span>'+chipsL(P+'Decision',[['ترحيل بموعد جديد','تكمل للجلسة الجاية'],['إلغاء لعدم الملاءمة','تتلغي']],'ترحيل بموعد جديد')+'</div>':'')+
+      '<div class="grid g2">'+inp(P+'ImplementationNote','text','حصل إيه؟ (اختياري)')+inp(P+'EvidenceNote','text','الدليل اللي اتشاف (اختياري)')+'</div></div>'}).join(''),'علّم كل مهمة: اتعملت ولا لأ. اللي متعملتش بتكمل للجلسة الجاية إلا لو اخترت تتلغي.');
+  // 3 routines review
+  if(c.routines.length)h+=sec(++n,'الروتين اللي فات ('+c.routines.length+')',c.routines.map(function(r){var rr=d.routineReviews[r.RAID],P='routineReviews|'+r.RAID+'|';
+    return '<div class="card flat" style="padding:8px 10px"><div class="row"><b class="grow">'+(r.Code?'<span class="tag">'+esc(r.Code)+'</span> ':'')+esc(r.RoutineName)+'</b><span class="sm mut">'+esc(r.FrequencyText)+'</span>'+(r.stable?'<span class="tag ok">ثابت ✓</span>':'')+'</div>'+
+      (r.slots.length?'<div class="row" style="gap:4px;margin:4px 0">'+r.slots.map(function(sl){var key=sl.DueDate+'#'+sl.PeriodLabel,v=rr.occ[key];return '<span class="slot '+(OCC_CLS[v]||'')+'" data-act="occ" data-ra="'+r.RAID+'" data-k="'+esc(key)+'">'+esc(sl.PeriodLabel)+'<br><b>'+esc(v||'؟')+'</b></span>'}).join('')+
+        '</div><div class="row"><button class="btn sm sec" data-act="occAll" data-ra="'+r.RAID+'" data-v="تم">كله اتعمل</button><button class="btn sm sec" data-act="occAll" data-ra="'+r.RAID+'" data-v="لم يتم">ولا مرة</button><span class="sm mut">اللي مش متعلّم بيتحسب «لم يتم»</span></div>':'<div class="sm mut">مفيش مرات مستحقة في الفترة دي.</div>')+
+      (r.IsRoadmap&&r.slots.length?'<div><span class="sm">الدليل اتشاف؟ </span>'+chipsL(P+'EvidenceSeen',[['نعم','أيوه'],['لا','لأ']])+'</div>':'')+
+      '<div><span class="sm">الروتين ده: </span>'+chipsL(P+'Decision',r.Status==='نشط'?[['استمرار','يكمل'],['إيقاف مؤقت','يتوقف شوية'],['إنهاء','ينتهي']]:[['استمرار','يفضل متوقف'],['إعادة تفعيل','يرجع'],['إنهاء','ينتهي']],'استمرار')+'</div></div>'}).join(''));
+  // 4 numbers
+  var tracked=trackedKpis(),kmap=idx(c.journey.kpis,'KPIID');
+  h+=sec(++n,'أرقام المشروع',(tracked.length?'<div class="grid g3">'+tracked.map(function(k){var kp=L.kpi[k]||{},hist=kmap[k]?kmap[k].values:[],last=hist.length?hist[hist.length-1].Value:null;
+      return '<div><label class="f">'+esc(kp.KPIName)+' <span class="mut">('+esc(kp.Unit)+')'+(last!==null?' — آخر مرة '+fmtN(last):'')+'</span></label>'+inp('kpiValues|'+k+'|Value','number')+'</div>'}).join('')+'</div>':'<div class="sm mut">مفيش أرقام متابعة لسه — ضيف رقم أو اتنين.</div>')+
+    '<div class="row" style="margin-top:6px"><select id="addKpi" class="grow" style="width:auto"><option value="">+ ضيف رقم نتابعه…</option>'+L.LIB_Areas.map(function(a){return '<optgroup label="'+esc(a.AreaName)+'">'+L.LIB_KPIs.filter(function(k){return k.AreaID===a.AreaID&&tracked.indexOf(k.KPIID)<0}).map(kOpt).join('')+'</optgroup>'}).join('')+'</select><button class="btn sm sec" data-act="addKpi">إضافة</button></div>'+
+    '<label class="f">إيه اللي اتغير في المشروع من الجلسة اللي فاتت؟ (اختياري)</label>'+ta('businessResultNote','مثال: الطلبات زادت من 9 لـ 12'));
+  // 5 Assiut checklist
+  if(c.isRoadmap)h+='<div class="sh" style="margin-top:14px"><span class="n">'+(++n)+'</span><h3>تشيك ليست الروتينات (أسيوط)</h3></div>'+vChecklist();
+  // 6 problem + tasks
+  var D=d.diagnosis,prevP=c.previousSession&&c.previousSession.FocusProblemID;
+  var body='<div><span class="sm">المجال: </span>'+L.LIB_Areas.map(function(a){return '<span class="chip'+(D.AreaID===a.AreaID?' on':'')+'" data-act="pickArea" data-v="'+a.AreaID+'">'+esc(a.AreaName)+'</span>'}).join('')+'</div>';
+  if(D.AreaID)body+='<div style="margin-top:6px">'+L.LIB_Problems.filter(function(x){return x.AreaID===D.AreaID}).map(function(x){return '<span class="chip'+(D.ProblemID===x.ProblemID?' on':'')+'" data-act="pickProblem" data-v="'+x.ProblemID+'">'+esc(x.ProblemName)+(x.ProblemID===prevP?' ★':'')+'</span>'}).join('')+'</div>';
+  if(D.ProblemID){var open=openByTask(),done={};c.journey.assignments.forEach(function(a){if(a.CurrentDecision==='تم الإنجاز')done[a.TaskID]=a});var added={};d.newTasks.forEach(function(t){added[t.TaskID]=t});
+    var pt=L.LIB_Actions.filter(function(a){return a.ProblemID===D.ProblemID&&a.Active!=='لا'});
+    body+='<h4>مهام المشكلة دي من المكتبة ('+pt.length+')</h4><div class="grid g2">'+pt.map(function(a){return taskCard(a.TaskID,open[a.TaskID],done[a.TaskID],added[a.TaskID])}).join('')+'</div>';}
+  if(d.newTasks.length)body+='<h4>المهام اللي هتتسند ('+d.newTasks.length+')</h4>'+d.newTasks.map(function(t,i){var a=L.action[t.TaskID]||{},P='newTasks|'+i+'|';
+    return '<div class="card flat" style="padding:8px 10px"><div class="row"><b class="grow">'+esc(t.TaskID==='CUSTOM'?(t.TaskName||'مهمة جديدة'):a.TaskName)+'</b><button class="btn sm danger" data-act="delTask" data-i="'+i+'">شيلها</button></div>'+
+      (t.TaskID==='CUSTOM'?'<div class="grid g2"><div><label class="f req">اسم المهمة</label>'+inp(P+'TaskName')+'</div><div><label class="f">المطلوب في الآخر</label>'+inp(P+'Deliverable')+'</div></div><label class="f req">الخطوات (سطر لكل خطوة)</label>'+ta(P+'CustomInstructions'):'')+
+      '<div class="grid g3"><div><label class="f req">آخر ميعاد</label>'+inp(P+'Deadline','date')+'</div><div><label class="f">المسؤول</label>'+inp(P+'Responsible','text',a.Responsible||'صاحب المشروع')+'</div>'+(t.TaskID!=='CUSTOM'?'<div><label class="f">ملاحظة للمشروع ده</label>'+inp(P+'CustomInstructions','text','مثال: ابدأ بأكتر منتج بيتباع')+'</div>':'')+'</div></div>'}).join('');
+  body+='<div class="row" style="margin-top:8px"><select id="extraTask" class="grow" style="width:auto"><option value="">+ مهمة تانية من المكتبة…</option>'+L.LIB_Areas.map(function(a){return '<optgroup label="'+esc(a.AreaName)+'">'+L.LIB_Actions.filter(function(x){return x.AreaID===a.AreaID}).map(function(x){return '<option value="'+x.TaskID+'">'+esc(x.TaskName)+'</option>'}).join('')+'</optgroup>'}).join('')+'</select><button class="btn sm sec" data-act="addExtra">إضافة</button><button class="btn sm sec" data-act="addCustom">+ مهمة بإيدي</button></div>';
+  h+=sec(++n,'المشكلة والمهام الجديدة',body,prevP?'★ = المشكلة اللي كنا شغالين عليها. اختار المشكلة، وبعدين اختار المهام من المكتبة.':'اختار المجال والمشكلة، وبعدين اختار المهام من المكتبة.');
+  // 7 routines
+  var active={};c.routines.forEach(function(r){var f=routineFinal(r);if(f!=='منتهي')active[r.RoutineID]=f});var addedR={};d.newRoutines.forEach(function(r){addedR[r.RoutineID]=1});
+  var rec=[];d.newTasks.forEach(function(t){var a=L.action[t.TaskID];if(a)ids(a.StrategyIDs).forEach(function(sid){var st=L.strategy[sid];if(st)ids(st.RoutineIDs).forEach(function(r){if(rec.indexOf(r)<0)rec.push(r)})})});
+  var areaOf=D.ProblemID&&L.problem[D.ProblemID]?L.problem[D.ProblemID].AreaID:D.AreaID;L.LIB_Routines.forEach(function(r){if(r.RoutineType==='روتين أساسي'&&r.AreaID===areaOf&&rec.indexOf(r.RoutineID)<0)rec.push(r.RoutineID)});
+  rec=rec.filter(function(r){return !active[r]&&!addedR[r]&&L.routine[r]&&!L.routine[r].IsRoadmap});
+  var rb=d.newRoutines.length?d.newRoutines.map(function(r,i){var lr=L.routine[r.RoutineID],P='newRoutines|'+i+'|';return '<div class="card flat" style="padding:8px 10px"><div class="row"><b class="grow">'+(lr.Code?'<span class="tag">'+esc(lr.Code)+'</span> ':'')+esc(lr.RoutineName)+'</b><span class="sm mut">'+esc(lr.FrequencyText)+'</span><button class="btn sm danger" data-act="delRoutine" data-i="'+i+'">شيله</button></div>'+
+    '<div class="grid g2"><div><label class="f'+(lr.IsRoadmap?' req':'')+'">إمتى وفين</label>'+inp(P+'WhenWhere','text','مثال: كل يوم قبل النوم')+'</div><div><label class="f">ملاحظة</label>'+inp(P+'CustomNote')+'</div></div></div>'}).join(''):'';
+  rb+=(rec.length?'<h4>روتين مقترح</h4><div class="grid g2">'+rec.map(routineLibCard).join('')+'</div>':'')+(c.isRoadmap?vRoadmapPicker(active,addedR):'');
+  h+=sec(++n,'روتين جديد',rb||'<div class="sm mut">اختار مشكلة ومهام الأول عشان تظهر الاقتراحات.</div>','الروتين بيتسند مرة واحدة ويفضل مستمر، وبيتراجع كل جلسة.');
+  // 8 mentor note
+  h+=sec(++n,'كلمة المنتور',ta('mentorSummary','رسالة لصاحب المشروع تظهر في ورقة الجلسة')+'<div style="margin-top:6px"><span class="sm">صاحب المشروع شايف إنه يقدر ينفذ (اختياري): </span>'+[1,2,3,4,5].map(function(x){return '<span class="chip'+(String(d.readiness)===String(x)?' on':'')+'" data-act="readiness" data-v="'+x+'">'+x+'</span>'}).join('')+'</div>');
+  if(S.ssErr)h+='<div class="card box bad"><b>محتاج تكمّل قبل الحفظ:</b><ul>'+S.ssErr.map(function(x){return '<li>'+esc(x)+'</li>'}).join('')+'</ul></div>';
+  return h+'<div style="height:70px"></div>';}
+function vSSBar(){return '<div class="savebar"><button class="btn" data-act="ssFinalize" style="font-size:16px;padding:8px 20px">💾 احفظ الجلسة واطبع الورقة</button><button class="btn sec" data-act="saveDraft">حفظ كمسودة</button>'+
+  '<span class="grow sm mut" id="saveState">'+(S.lastSaved?'اتحفظت المسودة '+esc(S.lastSaved.slice(11)):'المسودة بتتحفظ لوحدها')+'</span><button class="btn sm danger" data-act="discard">احذف المسودة</button></div>';}
+function ssChecks(){var d=S.d,c=S.ctx,e=[];if(!d.sessionDate)e.push('تاريخ الجلسة');if(!d.planEnd||d.planEnd<=d.sessionDate)e.push('ميعاد الجلسة الجاية (بعد تاريخ الجلسة)');
+  if(!d.diagnosis.ProblemID&&!(c.previousSession&&c.previousSession.FocusProblemID))e.push('اختار المشكلة (خطوة «المشكلة والمهام الجديدة»)');
+  c.openAssignments.forEach(function(a){if(!d.reviews[a.AssignmentID].Status)e.push('علّم المهمة «'+a.TaskName+'»: اتعملت ولا لأ')});
+  d.newTasks.forEach(function(t){if(!t.Deadline)e.push('آخر ميعاد لكل مهمة جديدة');if(t.TaskID==='CUSTOM'&&(!String(t.TaskName||'').trim()||!String(t.CustomInstructions||'').trim()))e.push('اسم وخطوات المهمة اللي كتبتها بإيدك')});
+  if(c.isRoadmap){if(!d.projectMode)e.push('نوع المشروع في التشيك ليست');var miss=c.checklistItems.filter(function(it){return !(d.checklist[it.ItemID]||{}).Value}).length;if(miss)e.push('قيّم كل بنود التشيك ليست — ناقص '+miss);}
+  d.newRoutines.forEach(function(r){var lr=S.L.routine[r.RoutineID]||{};if(lr.IsRoadmap&&!String(r.WhenWhere||'').trim())e.push('«إمتى وفين» لـ '+lr.Code)});
+  return e;}
+function ssPayload(){var P=payload(),c=S.ctx;P.mode='simple';
+  P.reviews.forEach(function(r){if(r.Status==='مكتملة')r.Decision='تم الإنجاز';else if(r.Decision!=='إلغاء لعدم الملاءمة')r.Decision='ترحيل بموعد جديد';});
+  P.routineReviews.forEach(function(r){if(!r.Decision)r.Decision='استمرار';r.occurrences.forEach(function(o){if(!o.Status)o.Status='لم يتم'});var rt=c.routines.filter(function(x){return x.RAID===r.RAID})[0];if(rt&&rt.IsRoadmap&&rt.slots.length&&!r.EvidenceSeen)r.EvidenceSeen='لا';});
+  if(!P.diagnosis.ProblemID)P.diagnosis={ProblemID:'',causes:[]};else P.diagnosis.causes=P.diagnosis.causes||[];
+  P.strategy={PrimaryStrategyID:'',SupportingStrategyID:'',SupportJustification:''};return P;}
+function ssFinalize(){var e=ssChecks();S.ssErr=e.length?e:null;if(e.length){render();window.scrollTo(0,document.body.scrollHeight);return;}
+  var sid=S.ctx.session.SessionID;run(call('finalize',sid,ssPayload()),'حفظ الجلسة…').then(function(){S.dirty=false;toast('اتحفظت الجلسة');S.ctx=null;S.d=null;openSheet(sid);},function(err){S.ssErr=(err&&err.details)||[String(err&&err.message||err)];render();});}
+
 /* ============================================================ events */
 document.addEventListener('input',function(e){var b=e.target.getAttribute('data-bind');if(b&&S.d){var v=e.target.value;setP(S.d,b,v);S.dirty=true;
   if(/BeforeValue|AfterValue|kpiValues/.test(b)){clearTimeout(window._rr);window._rr=setTimeout(function(){keepScroll(render)},700);}}
@@ -578,7 +687,7 @@ document.addEventListener('change',function(e){var t=e.target,a=t.getAttribute('
 function keepScroll(fn){var y=window.scrollY;fn();window.scrollTo(0,y);}
 document.addEventListener('click',function(e){var el=e.target.closest('[data-act]');if(!el)return;var a=el.getAttribute('data-act'),v=el.getAttribute('data-v');
   if(el.tagName==='SELECT'||(el.tagName==='INPUT'&&el.type!=='checkbox'&&el.type!=='button'))return;if(el.type==='checkbox')return;
-  var H={
+  var H=window.__H={
   nav:function(){go(v)},closeModal:closeModal,modalBg:function(){if(e.target===el)closeModal()},newProject:newProjectForm,saveProject:saveProject,openProject:function(){openProject(v)},
   jtab:function(){S.jtab=v;render()},toggle:function(){S.openCards[v]=!S.openCards[v];keepScroll(render)},
   expandAll:function(){S.journey.sessions.forEach(function(s){S.openCards['ses_'+s.SessionID]=1});render()},collapseAll:function(){S.openCards={};render()},
@@ -611,11 +720,17 @@ document.addEventListener('click',function(e){var el=e.target.closest('[data-act
   clCopy:function(){var prev=S.ctx.previousChecklist||{},n=0;S.ctx.checklistItems.forEach(function(it){var c=S.d.checklist[it.ItemID]=S.d.checklist[it.ItemID]||{Value:'',Note:''};if(!c.Value&&prev[it.ItemID]&&prev[it.ItemID].Value){c.Value=prev[it.ItemID].Value;n++;}});S.dirty=true;keepScroll(render);toast('اتنسخ '+n+' بند — راجعهم مع صاحب المشروع')},
   delRoutine:function(){S.d.newRoutines.splice(+el.getAttribute('data-i'),1);S.dirty=true;keepScroll(render)},
   readiness:function(){S.d.readiness=v;S.dirty=true;keepScroll(render)},
-  finalize:finalize,discard:function(){if(!confirm('حذف المسودة؟ لن تتأثر أي جلسة محفوظة.'))return;run(call('discardDraft',S.ctx.session.SessionID)).then(function(){S.dirty=false;openProject(S.ctx.project.ProjectID)})},
+  finalize:finalize,discard:function(){if(!confirm('حذف المسودة؟ لن تتأثر أي جلسة محفوظة.'))return;run(call('discardDraft',S.ctx.session.SessionID)).then(function(){S.dirty=false;if(S.mode==='simple'){S.view='home';S.ctx=null;S.d=null;refreshHome();}else openProject(S.ctx.project.ProjectID)})},
   printPlan:function(){var f=document.getElementById('planFrame');f.contentWindow.focus();f.contentWindow.print()},
+  home:function(){if(S.view==='ss'&&S.dirty)saveDraft(true);S.view='home';S.ctx=null;S.d=null;S.plan=null;refreshHome()},
+  changeMentor:function(){S.mentorId='';lsSet('athar_mentor','');S.view='home';render()},
+  uiMode:function(){if(S.view==='ss'&&S.dirty)saveDraft(true);S.mode=S.mode==='simple'?'adv':'simple';lsSet('athar_mode',S.mode);S.ctx=null;S.d=null;S.plan=null;if(S.mode==='simple'){S.view='home';refreshHome();}else go('projects');},
+  ssStart:function(){ssStart(v,el.getAttribute('data-d'))},openSheet:function(){openSheet(v)},
+  ssFinalize:ssFinalize,remTask:function(){S.d.newTasks=S.d.newTasks.filter(function(t){return t.TaskID!==v});S.dirty=true;keepScroll(render)},
+  remRoutine:function(){S.d.newRoutines=S.d.newRoutines.filter(function(r){return r.RoutineID!==v});S.dirty=true;keepScroll(render)},
   planMode:function(){if(v==='a4'&&!S.plan.a4){run(call('sessionSheetHtml',S.plan.sid),'تجهيز ملخص الجلسة…').then(function(h){S.plan.a4=h;S.plan.mode='a4';render()});return;}S.plan.mode=v;render()},
-  pdfPlan:function(){run(call('savePlanPdf',S.plan.sid,S.plan.mode==='a4'?'a4':''),'إنشاء PDF في Google Drive…').then(function(r){modal('<h3>تم حفظ الخطة</h3><a href="'+esc(r.url)+'" target="_blank">'+esc(r.name)+'</a><div class="row" style="justify-content:flex-end"><button class="btn" data-act="closeModal">حسنًا</button></div>')})},
-  copyPlan:function(){var t=S.plan.text;if(navigator.clipboard)navigator.clipboard.writeText(t).then(function(){toast('تم النسخ')},function(){prompt('انسخ النص:',t)});else prompt('انسخ النص:',t)},
+  pdfPlan:function(){run(call('savePlanPdf',S.plan.sid,(S.mode==='simple'||S.plan.mode==='a4')?'a4':''),'إنشاء PDF في Google Drive…').then(function(r){modal('<h3>تم حفظ الخطة</h3><a href="'+esc(r.url)+'" target="_blank">'+esc(r.name)+'</a><div class="row" style="justify-content:flex-end"><button class="btn" data-act="closeModal">حسنًا</button></div>')})},
+  copyPlan:function(){if(!S.plan.text){run(call('planText',S.plan.sid),'تجهيز النص…').then(function(t){S.plan.text=t;H.copyPlan()});return;}var t=S.plan.text;if(navigator.clipboard)navigator.clipboard.writeText(t).then(function(){toast('تم النسخ')},function(){prompt('انسخ النص:',t)});else prompt('انسخ النص:',t)},
   applyDash:loadDash,resetDash:function(){S.df={};loadDash()}};
   if(H[a]){e.preventDefault();H[a]();}});
 function payload(){var d=S.d,c=S.ctx;return {sessionDate:d.sessionDate,planEnd:d.planEnd,businessResultNote:d.businessResultNote,readiness:d.readiness,workloadNote:d.workloadNote,mentorSummary:d.mentorSummary,

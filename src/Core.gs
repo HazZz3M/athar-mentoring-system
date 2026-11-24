@@ -140,7 +140,7 @@ function apiBootstrap(opts) {
   ['LIB_Areas', 'LIB_Problems', 'LIB_Causes', 'LIB_Strategies', 'LIB_Actions', 'LIB_ActionSteps', 'LIB_Routines',
     'LIB_RoutineSteps', 'LIB_KPIs', 'LIB_Sources', 'LIB_Lists', 'LIB_RoadmapTasks', 'LIB_RoadmapChecklist'].forEach(function (t) { library[t] = L[t] || []; });
   }
-  return { library: library, libVersion: ver, mentors: DB.all('DB_Mentors').filter(function (m) { return m.Active !== C.NO; }),
+  return { library: library, libVersion: ver, projects: opts && opts.withProjects ? apiListProjects({ includeTest: !!opts.includeTest }) : undefined, mentors: DB.all('DB_Mentors').filter(function (m) { return m.Active !== C.NO; }),
     user: DB.user(), today: DB.today(), constants: { barriers: C.BARRIERS, statuses: C.TASK_STATUSES, decisions: C.TASK_DECISIONS,
       routineDecisions: C.ROUTINE_DECISIONS, occStatuses: C.OCC_STATUSES, newTasksSoftLimit: C.NEW_TASKS_SOFT_LIMIT,
       roadmapGovs: roadmapGovs_(), checklistValues: C.CL_VALUES, modes: C.MODES, roadmapNewLimit: C.ROADMAP_NEW_LIMIT, roadmapType: C.T_ROADMAP } };
@@ -424,8 +424,35 @@ function apiSuggest(problemId, causeIds) {
 }
 
 /* ------------------------------------------------------------------ finalize */
+/**
+ * Simple session (the default mentor screen): no separate causes / strategy pickers. Fills what the detailed flow asks for:
+ * the approach (strategy) is the one of the chosen problem that covers most of the chosen tasks; continuing tasks keep going
+ * to the next session; review notes, barriers, readiness and the business-result note become optional.
+ */
+function normalizeSimple_(ctx, P) {
+  if (P.mode !== 'simple') return P;
+  var L = lib_(), D = P.diagnosis = P.diagnosis || {};
+  if (!D.ProblemID && ctx.previousSession && ctx.previousSession.FocusProblemID) { D.ProblemID = ctx.previousSession.FocusProblemID; D.ContinuedFocus = true; }
+  D.causes = D.causes || [];
+  var S = P.strategy = P.strategy || {};
+  if (!S.PrimaryStrategyID && L.problem[D.ProblemID]) {
+    var chosen = (P.newTasks || []).map(function (t) { return t.TaskID; });
+    var cands = L.LIB_Strategies.filter(function (x) { return x.ProblemID === D.ProblemID; }).map(function (x) {
+      return { id: x.StrategyID, n: ids_(x.TaskIDs).filter(function (t) { return chosen.indexOf(t) >= 0; }).length }; }).sort(function (a, b) { return b.n - a.n; });
+    var keep = ctx.previousSession && ctx.previousSession.FocusProblemID === D.ProblemID ? ctx.previousSession.PrimaryStrategyID : '';
+    S.PrimaryStrategyID = cands.length && (cands[0].n || !keep) ? cands[0].id : keep;
+  }
+  (P.reviews || []).forEach(function (r) {
+    if (!r.Decision) r.Decision = r.Status === C.ST_DONE ? C.DEC_DONE : C.DEC_CARRY;
+    if (r.Status !== C.ST_DONE && r.Decision === C.DEC_DONE) r.Decision = C.DEC_CARRY;
+    if ((r.Decision === C.DEC_CARRY || r.Decision === C.DEC_MOD) && !isDate_(r.NewDeadline)) r.NewDeadline = P.planEnd;
+  });
+  (P.routineReviews || []).forEach(function (r) { if (!r.Decision) r.Decision = C.R_CONT; });
+  return P;
+}
+
 function validateFinalize_(ctx, P) {
-  var errs = [], L = lib_();
+  var errs = [], L = lib_(), simple = P.mode === 'simple';
   var rv = index_(P.reviews || [], 'AssignmentID');
   ctx.openAssignments.forEach(function (a) {
     var r = rv[a.AssignmentID], nm = '«' + a.TaskName + '»';
@@ -437,8 +464,8 @@ function validateFinalize_(ctx, P) {
     if (r.NewDeadline && isDate_(r.NewDeadline) && r.NewDeadline < P.sessionDate) errs.push('الموعد الجديد يسبق تاريخ الجلسة: ' + nm);
     if ((r.Decision === C.DEC_MOD || r.Decision === C.DEC_ESC) && !str_(r.Adjustment)) errs.push('اكتب التعديل أو الدعم المطلوب للمهمة ' + nm);
     if (r.Decision === C.DEC_SPLIT && !(r.SubTasks || []).filter(function (x) { return str_(x.name); }).length) errs.push('أضف مهمة فرعية واحدة على الأقل عند تقسيم ' + nm);
-    if ([C.ST_NOT, C.ST_BLOCK, C.ST_PART].indexOf(r.Status) >= 0 && !(r.Barriers || []).length) errs.push('اختر سبب عدم الإنجاز للمهمة ' + nm);
-    if (r.Status !== C.ST_NOT && !str_(r.ImplementationNote)) errs.push('اكتب ماذا نُفذ فعليًا في المهمة ' + nm);
+    if (!simple && [C.ST_NOT, C.ST_BLOCK, C.ST_PART].indexOf(r.Status) >= 0 && !(r.Barriers || []).length) errs.push('اختر سبب عدم الإنجاز للمهمة ' + nm);
+    if (!simple && r.Status !== C.ST_NOT && !str_(r.ImplementationNote)) errs.push('اكتب ماذا نُفذ فعليًا في المهمة ' + nm);
   });
   ctx.routines.forEach(function (r) {
     var rr = (P.routineReviews || []).filter(function (x) { return x.RAID === r.RAID; })[0];
@@ -451,7 +478,7 @@ function validateFinalize_(ctx, P) {
   if (!L.problem[D.ProblemID]) errs.push('اختر المشكلة ذات الأولوية');
   else {
     var valid = (D.causes || []).filter(function (c) { return L.cause[c.CauseID] && L.cause[c.CauseID].ProblemID === D.ProblemID && (c.Classification === C.DIAG_CONF || c.Classification === C.DIAG_LIKELY); });
-    if (!valid.length) errs.push('صنّف سببًا واحدًا على الأقل كمؤكد أو مرجح');
+    if (!valid.length && !simple) errs.push('صنّف سببًا واحدًا على الأقل كمؤكد أو مرجح');
   }
   var S = P.strategy || {};
   var ps = L.strategy[S.PrimaryStrategyID];
@@ -477,8 +504,8 @@ function validateFinalize_(ctx, P) {
       seen[t.TaskID] = 1;
       if (stillOpen[t.TaskID]) errs.push('المهمة ' + nm + ' مسندة بالفعل ومفتوحة (' + stillOpen[t.TaskID].AssignmentID + ')؛ استخدم قرار الاستمرار بدل إسنادها مرة أخرى');
       var inStrategy = ids_(act.StrategyIDs).some(function (x) { return chosen.indexOf(x) >= 0; });
-      if (!inStrategy && !str_(t.OffStrategyReason)) errs.push('المهمة ' + nm + ' ليست ضمن الاستراتيجية المختارة؛ اكتب مبرر الإسناد');
-    } else if (!str_(t.OffStrategyReason)) errs.push('اكتب سبب إضافة المهمة المخصصة «' + str_(t.TaskName) + '»');
+      if (!inStrategy && !simple && !str_(t.OffStrategyReason)) errs.push('المهمة ' + nm + ' ليست ضمن الاستراتيجية المختارة؛ اكتب مبرر الإسناد');
+    } else if (!simple && !str_(t.OffStrategyReason)) errs.push('اكتب سبب إضافة المهمة المخصصة «' + str_(t.TaskName) + '»');
     if (!isDate_(t.Deadline)) errs.push('حدد موعد تسليم المهمة ' + nm);
     else if (t.Deadline < P.sessionDate) errs.push('موعد المهمة يسبق تاريخ الجلسة: ' + nm);
   });
@@ -499,10 +526,10 @@ function validateFinalize_(ctx, P) {
     if (activeAfter[r.RoutineID]) errs.push('الروتين «' + lr.RoutineName + '» مسند بالفعل لهذا المشروع؛ عدّله أو أعد تفعيله بدل تكراره');
   });
   var rd = num_(P.readiness);
-  if (!(rd >= 1 && rd <= 5)) errs.push('سجّل درجة استعداد صاحب المشروع من 1 إلى 5');
+  if (!(rd >= 1 && rd <= 5)) { if (!simple || str_(P.readiness)) errs.push('سجّل درجة استعداد صاحب المشروع من 1 إلى 5'); }
   else if (rd <= 2 && (P.newTasks || []).length > 1 && !str_(P.workloadNote)) errs.push('الاستعداد منخفض: قلّل المهام أو اكتب سبب الإبقاء عليها');
   if (!isDate_(P.planEnd) || P.planEnd <= P.sessionDate) errs.push('حدد موعد الجلسة التالية بعد تاريخ هذه الجلسة');
-  if (!ctx.isFirstSession && !str_(P.businessResultNote)) errs.push('اكتب النتيجة الفعلية للأعمال منذ الجلسة السابقة (حتى لو: لا تغيير بعد)');
+  if (!simple && !ctx.isFirstSession && !str_(P.businessResultNote)) errs.push('اكتب النتيجة الفعلية للأعمال منذ الجلسة السابقة (حتى لو: لا تغيير بعد)');
   (P.kpiValues || []).forEach(function (k) { if (!L.kpi[k.KPIID]) errs.push('مؤشر غير معروف: ' + k.KPIID); else if (num_(k.Value) === null) errs.push('قيمة غير رقمية للمؤشر «' + L.kpi[k.KPIID].KPIName + '»'); });
   if (ctx.isRoadmap) {
     var mode = str_(P.projectMode) || str_(ctx.project.ProjectMode);
@@ -525,6 +552,7 @@ function apiFinalizeSession(sessionId, P) {
     P.sessionDate = isDate_(P.sessionDate) ? P.sessionDate : s.SessionDate;
     if (P.sessionDate !== s.SessionDate) { s.SessionDate = P.sessionDate; s.PlanStart = P.sessionDate; }
     var ctx = sessionContext_(s);
+    normalizeSimple_(ctx, P);
     var errs = validateFinalize_(ctx, P);
     if (errs.length) { var e = AppError('لا يمكن حفظ الجلسة قبل استكمال ما يلي:\n• ' + errs.join('\n• ')); e.details = errs; throw e; }
 
@@ -691,7 +719,7 @@ function apiFinalizeSession(sessionId, P) {
       ContinuedFocus: D.ContinuedFocus ? C.YES : C.NO, Readiness: num_(P.readiness), WorkloadNote: str_(P.workloadNote),
       NewTasksCount: (P.newTasks || []).length + newAsg.filter(function (a) { return a.ParentAssignmentID; }).length,
       ContinuingTasksCount: continuing, ActiveRoutinesCount: activeRoutines, BusinessResultNote: str_(P.businessResultNote),
-      MentorSummary: str_(P.mentorSummary), DraftJSON: '', SavedAt: now, AfterTrainingDay: str_(P.afterTrainingDay),
+      MentorSummary: str_(P.mentorSummary), DraftJSON: '', SavedAt: now, AfterTrainingDay: str_(P.afterTrainingDay), SessionMode: P.mode === 'simple' ? 'بسيطة' : 'متقدمة',
       ChecklistScorePct: clStat ? clStat.pct : '', ChecklistApplicable: clStat ? clStat.applicable : '' };
     logs.push(log_(gLog, p.ProjectID, s.SessionID, 'حفظ جلسة', 'Session', s.SessionID, 'مراجعة ' + reviews.length + ' مهمة، ' + newAsg.length + ' مهمة جديدة، ' + raRows.length + ' روتين جديد', dt));
 
@@ -879,179 +907,153 @@ function apiPlanText(sessionId) {
   return o.join('\n');
 }
 
-/* ------------------------------------------------------------------ one-page A4 session summary */
-/** Everything that matters to the project from one saved session, for a single printed A4 page. */
+/* ------------------------------------------------------------------ session sheet (print) */
+/**
+ * Everything from one saved session, in full, for printing (several A4 pages if needed — nothing is hidden or shortened).
+ * Task and routine texts come straight from the libraries (or the instruction snapshot taken when the task was assigned).
+ */
 function apiSessionSheet(sessionId) {
   var P = apiGetPlan(sessionId), L = lib_();
   var s = DB.all('DB_Sessions').filter(function (x) { return x.SessionID === sessionId; })[0];
-  var asg = index_(DB.all('DB_TaskAssignments').filter(function (a) { return a.ProjectID === s.ProjectID; }), 'AssignmentID');
-  var reviews = DB.all('DB_TaskReviews').filter(function (r) { return r.SessionID === sessionId; }).map(function (r) {
+  var asgAll = DB.all('DB_TaskAssignments').filter(function (a) { return a.ProjectID === s.ProjectID; });
+  var asg = index_(asgAll, 'AssignmentID');
+  var fullTask = function (a, base) {   // every library field for a task, in its order
+    var act = L.action[a.TaskID] || {};
+    var lib = (L.steps[a.TaskID] || []).map(function (x) { return { no: x.StepNo, title: x.StepTitle, text: x.Instruction, check: x.CheckQuestion }; });
+    return Object.assign({}, base || {}, { TaskID: a.TaskID, TaskName: a.TaskName, Purpose: act.Purpose || '', Summary: act.SummaryEg || '', Prerequisites: act.Prerequisites || '',
+      Time: act.EstimatedTime || '', Frequency: act.FrequencyText || '', Steps: lib, Snapshot: lib.length ? '' : (a.StepsSnapshot || a.CustomInstructions || ''),
+      Deliverable: a.Deliverable || act.Deliverable || '', Evidence: a.EvidenceRequired || act.Evidence || '', Completion: act.CompletionIndicator || '', Outcome: act.OutcomeIndicator || '',
+      Cautions: act.Cautions || '', Alternative: act.LowResourceAlternative || '', ReviewQuestion: act.ReviewQuestion || '', Responsible: a.Responsible || act.Responsible || '',
+      CustomInstructions: a.TaskID === 'CUSTOM' ? '' : (a.CustomInstructions || ''), Target: a.TargetNote || '', Origin: a.Origin || '' });
+  };
+  P.newTasks = asgAll.filter(function (a) { return a.SessionID === sessionId; }).map(function (a) { return fullTask(a, { Deadline: a.OriginalDeadline }); });
+  P.continuing = P.continuing.map(function (c) { var a = asg[c.AssignmentID] || {}; return fullTask(a, c); });
+  P.reviews = DB.all('DB_TaskReviews').filter(function (r) { return r.SessionID === sessionId; }).map(function (r) {
     var a = asg[r.AssignmentID] || {};
-    return { TaskName: a.TaskName || r.TaskID, Status: r.Status, Decision: r.Decision, Result: r.ActualResult || r.ImplementationNote, NewDeadline: r.NewDeadline,
-      Barriers: r.BarrierCategories, HasEvidence: r.HasEvidence === C.YES };
+    return { TaskName: a.TaskName || r.TaskID, Status: r.Status, Decision: r.Decision, Note: r.ImplementationNote, Result: r.ActualResult, NewDeadline: r.NewDeadline,
+      Barriers: r.BarrierCategories, Evidence: r.EvidenceNote || r.EvidenceLink, HasEvidence: r.HasEvidence === C.YES, Adjustment: r.Adjustment };
   });
+  Object.keys(P.routines).forEach(function (k) { P.routines[k] = P.routines[k].map(function (r) {
+    var ra = DB.all('DB_RoutineAssignments').filter(function (x) { return x.RAID === r.RAID; })[0] || {}, lr = L.routine[ra.RoutineID] || {};
+    return Object.assign(r, { Purpose: lr.Purpose || '', WhenToDo: lr.WhenToDo || '', Mechanism: lr.Mechanism || '', Output: lr.Output || '', Evidence: lr.Evidence || r.Evidence || '',
+      Steps: (L.rsteps[ra.RoutineID] || []).map(function (x) { return { no: x.StepNo, title: x.StepTitle, text: x.Instruction, check: x.CheckQuestion }; }),
+      Responsible: r.Responsible || lr.Responsible || '', Paper: lr.PaperAlternative || '', ExpectedResult: lr.IsRoadmap ? lr.Purpose : '', Domain: lr.Domain || '' });
+  }); });
   var allKv = DB.all('DB_KPIValues').filter(function (v) { return v.ProjectID === s.ProjectID; });
-  var kpis = allKv.filter(function (v) { return v.SessionID === sessionId; }).map(function (v) {
+  P.kpis = allKv.filter(function (v) { return v.SessionID === sessionId; }).map(function (v) {
     var k = L.kpi[v.KPIID] || {};
     var prev = allKv.filter(function (x) { return x.KPIID === v.KPIID && +x.SessionNo < +s.SessionNo; }).sort(function (a, b) { return a.SessionNo - b.SessionNo; });
-    var pv = prev.length ? prev[prev.length - 1].Value : null;
-    return { name: k.KPIName || v.KPIID, unit: k.Unit || '', value: v.Value, prev: pv, direction: k.Direction || '' };
+    return { name: k.KPIName || v.KPIID, unit: k.Unit || '', value: v.Value, prev: prev.length ? prev[prev.length - 1].Value : null, direction: k.Direction || '' };
   });
-  P.reviews = reviews; P.kpis = kpis;
+  var cl = DB.all('DB_ChecklistScores').filter(function (c) { return c.SessionID === sessionId; });
+  P.checklistItems = cl.length ? L.checklist.map(function (it) { var c = cl.filter(function (x) { return x.ItemID === it.ItemID; })[0] || {};
+    return { Domain: it.Domain, text: it.RoutineText, freq: it.FrequencyText, ask: it.EvidenceToAsk, value: c.Value || '', note: c.Note || '' }; }) : [];
   P.readiness = s.Readiness; P.workloadNote = s.WorkloadNote; P.isFirst = +s.SessionNo === 1;
   return P;
 }
 
-/** First sentence / clause of an instruction, cut at a word boundary — used only when the full text does not fit on the page. */
-function shortText_(t, max) {
-  t = str_(t); max = max || 90;
-  var cut = t.split(/[.؛\n]/)[0];
-  if (cut.length > max) { cut = cut.slice(0, max); var sp = cut.lastIndexOf(' '); if (sp > max * 0.6) cut = cut.slice(0, sp); return cut + '…'; }
-  return cut.length < t.length ? cut + '…' : cut;
-}
-
-/**
- * Fit configurations, tried in order until the page fits one A4 sheet. Words are cut before type shrinks; deadlines,
- * deliverables and evidence are never hidden. Classes: l1 short step text · l2 step titles only · l3 steps in two columns ·
- * f1/f2 10.5/10pt · mK at most K steps per task · r lists cut to 4 items · tK at most K new tasks (rest: «in the full plan»).
- */
-var SHEET_FITS_ = ['', 'l1', 'l1 l3', 'l2 l3', 'l2 l3 f1', 'l2 l3 f2', 'l2 l3 f2 m4', 'l2 l3 f2 m3', 'l2 l3 f2 m3 r', 'l2 l3 f2 m2 r', 'l2 l3 f2 m2 r t4', 'l2 l3 f2 m2 r t3'];
-var SHEET_MAX_LINES_ = 46;   // one A4 page (273 mm ≈ 1031 px); worst case measured 21.9 px per estimated line in Chrome print layout
-
-/** Estimated height in 11pt lines for a fit configuration (the Drive PDF runs no JavaScript, so the server picks the configuration). */
-function sheetLines_(P, cfg) {
-  var has = function (c) { return (' ' + cfg + ' ').indexOf(' ' + c + ' ') >= 0; };
-  var lvl = has('l2') ? 2 : has('l1') ? 1 : 0, two = has('l3'), cut = has('r');
-  var maxSteps = has('m2') ? 2 : has('m3') ? 3 : has('m4') ? 4 : 99, maxTasks = has('t3') ? 3 : has('t4') ? 4 : 99;
-  var ln = function (t, cpl) { t = str_(t); return t ? Math.max(1, Math.ceil(t.length / cpl)) : 0; };
-  var n = 3.6;   // title, meta line, spacing
-  var box = function (parts) { return parts.reduce(function (a, t) { return a + ln(t, 32); }, 1.2); };
-  var res = [P.businessResult].concat(P.kpis.map(function (k) { return k.name + k.value + k.unit + '  كان  '; })).concat(P.checklist ? ['تشيك ليست الروتينات 00% (أول جلسة 00%)'] : []);
-  var foc = [P.focus.Problem, P.focus.Causes.map(function (c) { return c.text; }).join('؛ '), P.focus.Strategy + P.focus.Supporting].concat(lvl < 2 ? [P.focus.Expected] : []);
-  var dec = P.reviews.map(function (r) { return r.TaskName + r.Status + r.Decision + '  ←  دليل'; });
-  if (cut && dec.length > 4) dec = dec.slice(0, 4).concat(['+']);
-  n += Math.max(box(res), box(foc), box(dec.length ? dec : ['-'])) + 1.4;
-  P.newTasks.slice(0, maxTasks).forEach(function (t) {
-    n += 0.9 + ln(t.TaskName + t.Deadline + t.Responsible + t.Target + '   آخر ميعاد   ', 100) + ln(t.Deliverable + t.Evidence + '  المطلوب  الدليل  ', 104);
-    if (t.CustomInstructions && t.Steps.length) n += ln('ملاحظة المنتور: ' + t.CustomInstructions, 104);
-    if (!t.Steps.length) n += ln(t.Snapshot || t.CustomInstructions, 104);
-    var st = t.Steps.slice(0, maxSteps), sl = st.reduce(function (a, x) { return a + ln(x.title + (lvl === 0 ? ': ' + x.text : lvl === 1 ? ': ' + shortText_(x.text) : ''), two ? 46 : 98); }, 0);
-    n += two ? Math.ceil(sl / 2) : sl;
-    if (t.Steps.length > maxSteps) n += 1;
-    if (t.Alternative && lvl < 2) n += ln('لو الإمكانيات محدودة: ' + t.Alternative, 104);
-  });
-  if (P.newTasks.length > maxTasks) n += 1;
-  var rl = []; Object.keys(P.routines).forEach(function (k) { P.routines[k].forEach(function (r) { rl.push((r.Code || '') + r.RoutineName + ' (كل أسبوعين) ' + (r.WhenWhere || '') + '  □□□□□□□'); }); });
-  var cl = P.continuing.map(function (c) { return c.TaskName + c.Deadline + (c.Adjustment || '') + ' — '; });
-  if (cut) { rl = rl.slice(0, 4).concat(rl.length > 4 ? ['+'] : []); cl = cl.slice(0, 4).concat(cl.length > 4 ? ['+'] : []); }
-  var left = 1.2 + cl.reduce(function (a, t) { return a + ln(t, 46); }, 0) + (cl.length ? 0 : 1) + (P.paused.length ? 1 : 0);
-  var right = 1.2 + rl.reduce(function (a, t) { return a + ln(t, 56); }, 0) + (rl.length ? 0 : 1);
-  n += Math.max(left, right) + 1.2;
-  n += 1.2 + ln(P.mentorSummary ? 'كلمة المنتور: ' + P.mentorSummary : '', 104) + ln(P.workloadNote ? 'اتفقنا على: ' + P.workloadNote : '', 104) +
-    (P.checklist && P.checklist.gaps.length && lvl < 2 ? ln(P.checklist.gaps.slice(0, 6).map(function (g) { return g.text; }).join('؛ ') + ' روتينات لسه محتاجة شغل', 104) : 0) +
-    ln('الجلسة الجاية 0000-00-00 — هات معاك: ' + uniq_(P.newTasks.map(function (t) { return str_(t.Evidence); })).join('؛ ') + '، وأرقام الفترة ودليل الروتين (الكارت أو الدفتر أو صور). استعداد 0/5', 104);
-  return n * (has('f2') ? 10 / 11 : has('f1') ? 10.5 / 11 : 1);
-}
-function sheetFitConfig_(P) {
-  for (var i = 0; i < SHEET_FITS_.length; i++) if (sheetLines_(P, SHEET_FITS_[i]) <= SHEET_MAX_LINES_) return SHEET_FITS_[i];
-  return SHEET_FITS_[SHEET_FITS_.length - 1];
-}
-function sheetFitLevel_(P) { return SHEET_FITS_.indexOf(sheetFitConfig_(P)); }
-
 function dt_(d) { return '<bdi dir="ltr">' + esc_(d) + '</bdi>'; }
 function apiSessionSheetHtml(sessionId, forPdf) {
   var P = apiSessionSheet(sessionId), h = P.header, f = P.focus, o = [];
-  var cfg = forPdf ? sheetFitConfig_(P) : '';
   var cb = '<span class="cb"></span>';
-  var hideAfter = function (prefix, from, to) { var a = []; for (var i = from; i <= to; i++) a.push('.' + prefix + i); return a.join(','); };
-  o.push('<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ملخص الجلسة ' + h.SessionNo + ' — ' + esc_(h.ProjectName) + '</title><style>' +
-    '@page{size:A4;margin:12mm}*{box-sizing:border-box}html,body{margin:0;background:#fff}bdi{white-space:nowrap}' +
-    'body{font-family:"Noto Sans Arabic","Noto Naskh Arabic","Segoe UI",Tahoma,Arial,sans-serif;color:#2b3a40;font-size:11pt;line-height:1.5}' +
-    'body.f1{font-size:10.5pt}body.f2{font-size:10pt}.page{width:186mm;margin:0 auto}' +
-    '.hd{margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #d9e3e5}.hd .ttl{font-size:1.35em;font-weight:700;color:#1f5f68}.hd .ttl small{font-size:.7em;font-weight:400;color:#6b7a7f;margin-inline-start:6px}' +
-    '.hd .m{color:#56666b;font-size:.92em}.hd .m b{color:#2b3a40;font-weight:600}' +
-    '.sec{margin-top:9px}.st{font-size:.95em;font-weight:700;color:#1f5f68;border-bottom:1px solid #e3eaeb;padding-bottom:1px;margin-bottom:3px}' +
-    'table.cols{width:100%;border-collapse:collapse;table-layout:fixed}table.cols td{vertical-align:top;padding:0 0 0 18px}table.cols td:last-child{padding-left:0}' +
-    '.lbl{color:#56666b}.val{font-weight:600}.mut{color:#7a878b}.pill{font-size:.85em;color:#56666b;border:1px solid #d9e3e5;border-radius:9px;padding:0 6px;white-space:nowrap}' +
-    '.good{color:#2f7a4f}.bad{color:#a8463f}.nw{white-space:nowrap}' +
-    'ul.pl{list-style:none;margin:0;padding:0}ul.pl li{margin:1px 0;padding-inline-start:1.3em;text-indent:-1.3em}' +
-    '.cb{display:inline-block;width:.8em;height:.8em;border:1.3px solid #8a979b;border-radius:2px;margin-inline-end:.45em;vertical-align:-.05em;text-indent:0}' +
-    '.days{white-space:nowrap;margin-inline-start:4px}.days .cb{width:.68em;height:.68em;margin-inline-end:2px}' +
-    '.task{margin:5px 0 7px;page-break-inside:avoid}.task .tn{font-weight:700}.task .meta{color:#56666b;font-size:.92em;margin-inline-start:4px}' +
-    '.task ul.steps{list-style:none;margin:2px 0 1px;padding:0 1.3em 0 0}.task ul.steps li{margin:0;padding-inline-start:1.3em;text-indent:-1.3em;break-inside:avoid}' +
-    '.task .dl{padding-inline-start:1.3em;font-size:.95em}.short,.mx,.tx,.rx{display:none}' +
-    'body.l1 .full{display:none}body.l1 .short{display:inline}body.l2 .full,body.l2 .short,body.l2 .opt{display:none}body.l3 .task ul.steps{columns:2;column-gap:18px}' +
-    'body.m4 ' + hideAfter('k', 5, 15).split(',').join(',body.m4 ') + ',body.m3 ' + hideAfter('k', 4, 15).split(',').join(',body.m3 ') + ',body.m2 ' + hideAfter('k', 3, 15).split(',').join(',body.m2 ') + '{display:none}' +
-    'body.m4 .mx4,body.m3 .mx3,body.m2 .mx2,body.r .rx,body.t4 .tx4,body.t3 .tx3{display:block}' +
-    'body.r ' + hideAfter('q', 5, 40).split(',').join(',body.r ') + ',body.t4 ' + hideAfter('tk', 5, 20).split(',').join(',body.t4 ') + ',body.t3 ' + hideAfter('tk', 4, 20).split(',').join(',body.t3 ') + '{display:none}' +
-    '.reco{margin-top:9px;padding:5px 9px;border-inline-start:3px solid #c9a35a;background:#fbf8f1}' +
-    '.over{display:none}body.toolong .over{display:block;border:1px dashed #b38600;padding:4px 8px;margin-bottom:6px;font-size:10pt}@media print{.over{display:none!important}}' +
-    '</style></head><body class="' + cfg + '"><div class="page" id="pg">');
-  o.push('<div class="over">المحتوى أطول من صفحة حتى بعد الاختصار؛ التفاصيل الكاملة في الخطة الكاملة.</div>');
-  o.push('<div class="hd"><div class="ttl">' + esc_(h.ProjectName) + '<small>ملخص الجلسة رقم ' + h.SessionNo + (h.DataType === C.TEST ? ' · بيانات تجريبية' : '') + '</small></div>' +
-    '<div class="m"><b>صاحب المشروع:</b> ' + esc_(h.OwnerName) + ' &nbsp;·&nbsp; <b>المنتور:</b> ' + esc_(h.MentorName) + ' &nbsp;·&nbsp; <b>تاريخ الجلسة:</b> ' + dt_(h.SessionDate) +
-    ' &nbsp;·&nbsp; <b>الجلسة الجاية:</b> ' + dt_(P.nextSession) + (P.afterTrainingDay ? ' &nbsp;·&nbsp; <b>بعد يوم التدريب:</b> ' + esc_(P.afterTrainingDay) : '') + '</div></div>');
-  // results · focus · previous tasks
-  var res = [];
-  if (P.businessResult) res.push('<div>' + esc_(P.businessResult) + '</div>');
-  if (P.kpis.length) res.push('<ul class="pl">' + P.kpis.map(function (k) {
+  var kv = function (label, val) { return str_(val) ? '<div class="kv"><span class="lbl">' + label + ':</span> ' + esc_(val) + '</div>' : ''; };
+  var steps = function (list) { return '<ol class="steps">' + list.map(function (x) {
+    return '<li>' + cb + '<span class="no">' + x.no + '.</span> <b>' + esc_(x.title) + '</b>' + (x.text ? ': ' + esc_(x.text) : '') + (x.check ? '<div class="chk">سؤال التأكد: ' + esc_(x.check) + '</div>' : '') + '</li>'; }).join('') + '</ol>'; };
+  o.push('<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>ورقة الجلسة ' + h.SessionNo + ' — ' + esc_(h.OwnerName || h.ProjectName) + '</title><style>' +
+    '@page{size:A4;margin:14mm 13mm}*{box-sizing:border-box}html,body{margin:0;background:#fff}bdi{white-space:nowrap}' +
+    'body{font-family:"Noto Sans Arabic","Noto Naskh Arabic","Segoe UI",Tahoma,Arial,sans-serif;color:#26343a;font-size:11.5pt;line-height:1.6}' +
+    '.page{max-width:184mm;margin:0 auto;padding:6mm 0}' +
+    'h1{font-size:17pt;margin:0;color:#1f5f68}.sub{color:#5f6e73;margin-top:2px}' +
+    '.meta{margin:8px 0 4px;padding:8px 10px;border:1px solid #dbe4e6;border-radius:6px}.meta div{display:inline-block;margin-inline-end:16px}.meta b{font-weight:600}' +
+    'h2{font-size:13pt;color:#1f5f68;margin:18px 0 6px;padding-bottom:3px;border-bottom:1.5px solid #c9d8db;page-break-after:avoid}' +
+    'h3{font-size:12pt;margin:0 0 4px}.lbl{color:#5f6e73}.kv{margin:2px 0}.mut{color:#7a878b}' +
+    '.task{border:1px solid #dbe4e6;border-radius:6px;padding:8px 11px;margin:9px 0}.task h3{break-after:avoid;page-break-after:avoid}.kv{break-inside:avoid}' +
+    '.task .eg{background:#f5f8f6;border-inline-start:3px solid #8db89c;padding:4px 8px;margin:5px 0;border-radius:3px}' +
+    'ol.steps{list-style:none;margin:5px 0;padding:0}ol.steps li{margin:4px 0;padding-inline-start:1.5em;text-indent:-1.5em;page-break-inside:avoid}' +
+    '.chk{color:#5f6e73;font-size:.92em;text-indent:0}.no{color:#5f6e73}' +
+    '.cb{display:inline-block;width:.85em;height:.85em;border:1.4px solid #7d8b90;border-radius:2px;margin-inline-end:.5em;vertical-align:-.08em;text-indent:0}' +
+    '.days{white-space:nowrap}.days .cb{width:.75em;height:.75em;margin-inline-end:3px}' +
+    'table.t{width:100%;border-collapse:collapse;font-size:.95em;margin:4px 0}table.t td,table.t th{border:1px solid #dbe4e6;padding:4px 6px;text-align:right;vertical-align:top}table.t th{background:#f3f6f7;font-weight:600}' +
+    '.good{color:#2f7a4f}.bad{color:#a8463f}.warnc{color:#8a5a10}' +
+    '.note{border-inline-start:3px solid #c9a35a;background:#fbf8f1;padding:7px 10px;margin:8px 0;border-radius:3px}' +
+    '.toolbar{position:sticky;top:0;background:#fff;padding:8px 0;border-bottom:1px solid #eee;margin-bottom:6px;text-align:left}' +
+    '.toolbar button{font:inherit;padding:6px 16px;border-radius:6px;border:1px solid #1f5f68;background:#1f5f68;color:#fff;cursor:pointer}' +
+    '@media print{.toolbar{display:none}.page{padding:0}}</style></head><body><div class="page">');
+  if (!forPdf) o.push('<div class="toolbar"><button onclick="window.print()">طباعة</button></div>');
+  o.push('<h1>' + esc_(h.OwnerName || h.ProjectName) + '</h1><div class="sub">' + esc_(h.ProjectName) + (h.BusinessType ? ' — ' + esc_(h.BusinessType) : '') + (h.DataType === C.TEST ? ' — بيانات تجريبية' : '') + '</div>');
+  o.push('<div class="meta"><div><b>الجلسة رقم:</b> ' + h.SessionNo + '</div><div><b>تاريخ الجلسة:</b> ' + dt_(h.SessionDate) + '</div><div><b>الجلسة الجاية:</b> ' + dt_(P.nextSession) + '</div>' +
+    '<div><b>المنتور:</b> ' + esc_(h.MentorName) + '</div>' + (h.Round ? '<div><b>الدورة:</b> ' + esc_(h.Round) + '</div>' : '') + (P.afterTrainingDay ? '<div><b>بعد يوم التدريب:</b> ' + esc_(P.afterTrainingDay) + '</div>' : '') +
+    (h.Readiness ? '<div><b>استعداد صاحب المشروع:</b> ' + esc_(h.Readiness) + ' من 5</div>' : '') + '</div>');
+  // 1. what happened
+  o.push('<h2>اللي حصل من الجلسة اللي فاتت</h2>');
+  if (P.businessResult) o.push('<div class="kv">' + esc_(P.businessResult) + '</div>');
+  if (P.kpis.length) o.push('<table class="t"><tr><th>الرقم</th><th>دلوقتي</th><th>قبل كده</th></tr>' + P.kpis.map(function (k) {
     var ch = k.prev !== null && k.value !== null ? k.value - k.prev : null;
     var good = ch === null || ch === 0 ? '' : (k.direction === 'أعلى أفضل' ? (ch > 0 ? 'good' : 'bad') : k.direction === 'أقل أفضل' ? (ch < 0 ? 'good' : 'bad') : '');
-    return '<li><span class="lbl">' + esc_(k.name) + ':</span> <span class="val">' + esc_(k.value) + '</span> ' + esc_(k.unit) + (k.prev !== null ? ' <span class="mut nw ' + good + '">(كان ' + esc_(k.prev) + ')</span>' : '') + '</li>'; }).join('') + '</ul>');
-  if (P.checklist && P.checklist.pct !== null) res.push('<div><span class="lbl">تشيك ليست الروتينات:</span> <span class="val">' + P.checklist.pct + '%</span>' +
-    (P.checklist.firstSessionNo !== h.SessionNo && P.checklist.firstPct !== null ? ' <span class="mut">(أول جلسة ' + P.checklist.firstPct + '%)</span>' : '') + '</div>');
-  if (!res.length) res.push('<div class="mut">' + (P.isFirst ? 'جلسة التشخيص الأولى — خط الأساس.' : 'لم تُسجل أرقام.') + '</div>');
-  var foc = '<div><span class="lbl">المشكلة:</span> ' + esc_(f.Problem) + '</div>' +
-    (f.Causes.length ? '<div><span class="lbl">السبب:</span> ' + f.Causes.map(function (c) { return esc_(c.text); }).join('؛ ') + '</div>' : '') +
-    '<div><span class="lbl">الطريقة:</span> ' + esc_(f.Strategy) + (f.Supporting ? ' + ' + esc_(f.Supporting) : '') + '</div>' +
-    (f.Expected ? '<div class="opt"><span class="lbl">المتوقع:</span> ' + esc_(f.Expected) + '</div>' : '');
-  var dec = P.reviews.length ? '<ul class="pl">' + P.reviews.map(function (r, i) {
-    var cls = r.Status === C.ST_DONE ? 'good' : (r.Status === C.ST_NOT || r.Status === C.ST_BLOCK) ? 'bad' : '';
-    return '<li class="q' + (i + 1) + '">' + esc_(r.TaskName) + ' — <span class="' + cls + '">' + esc_(r.Status) + '</span>، ' + esc_(r.Decision) + (r.HasEvidence ? ' <span class="mut">(بدليل)</span>' : '') + '</li>'; }).join('') + '</ul>' +
-      (P.reviews.length > 4 ? '<div class="mut rx">+ ' + (P.reviews.length - 4) + ' كمان في الخطة الكاملة</div>' : '')
-    : '<div class="mut">' + (P.isFirst ? 'أول جلسة — لا توجد مهام سابقة.' : 'لا توجد مهام سابقة للمراجعة.') + '</div>';
-  o.push('<table class="cols"><tr><td><div class="st">اللي حصل</div>' + res.join('') + '</td><td><div class="st">تركيزنا</div>' + foc + '</td><td><div class="st">المهام اللي فاتت</div>' + dec + '</td></tr></table>');
-  // new tasks as a checklist
-  o.push('<div class="sec"><div class="st">المهام الجديدة (' + P.newTasks.length + ')</div>');
-  if (!P.newTasks.length) o.push('<div class="mut">لا توجد مهام جديدة؛ التركيز على المهام المستمرة والروتين.</div>');
-  P.newTasks.forEach(function (t, i) {
-    o.push('<div class="task tk' + (i + 1) + '"><div>' + cb + '<span class="tn">' + esc_(t.TaskName) + '</span><span class="meta">آخر ميعاد ' + dt_(t.Deadline) +
-      (t.Responsible ? ' · ' + esc_(t.Responsible) : '') + (t.Target ? ' · الهدف: ' + esc_(t.Target) : '') + '</span></div>');
-    if (t.CustomInstructions && t.Steps.length) o.push('<div class="dl"><span class="lbl">ملاحظة المنتور:</span> ' + esc_(t.CustomInstructions) + '</div>');
-    if (t.Steps.length) {
-      o.push('<ul class="steps">' + t.Steps.map(function (x, k) { return '<li class="k' + (k + 1) + '">' + cb + (k + 1) + '. <b>' + esc_(x.title) + '</b><span class="full">: ' + esc_(x.text) + '</span><span class="short">: ' + esc_(shortText_(x.text)) + '</span></li>'; }).join('') + '</ul>');
-      [4, 3, 2].forEach(function (m) { if (t.Steps.length > m) o.push('<div class="dl mut mx mx' + m + '">+ ' + (t.Steps.length - m) + ' خطوات كمان في الخطة الكاملة</div>'); });
-    } else if (t.Snapshot || t.CustomInstructions) o.push('<div class="dl">' + esc_(t.Snapshot || t.CustomInstructions).replace(/\n/g, ' · ') + '</div>');
-    o.push('<div class="dl"><span class="lbl">المطلوب:</span> ' + esc_(t.Deliverable) + ' &nbsp;·&nbsp; <span class="lbl">الدليل:</span> ' + esc_(t.Evidence) + '</div>');
-    if (t.Alternative) o.push('<div class="dl mut opt">لو الإمكانيات محدودة: ' + esc_(t.Alternative) + '</div>');
-    o.push('</div>');
-  });
-  [4, 3].forEach(function (m) { if (P.newTasks.length > m) o.push('<div class="mut tx tx' + m + '">+ ' + (P.newTasks.length - m) + ' مهام كمان في الخطة الكاملة: ' + P.newTasks.slice(m).map(function (t) { return esc_(t.TaskName); }).join('، ') + '</div>'); });
-  o.push('</div>');
-  // continuing tasks · routines
-  var names = { DAILY: 'يومي', WEEKLY: 'أسبوعي', BIWEEKLY: 'كل أسبوعين', MONTHLY: 'شهري', PERIODIC: 'عند الحاجة' };
-  var boxes = function (k) { var n = k === 'DAILY' ? 7 : 1, a = ''; for (var i = 0; i < n; i++) a += '<span class="cb"></span>'; return '<span class="days">' + a + '</span>'; };
-  var rlist = [];
+    return '<tr><td>' + esc_(k.name) + '</td><td class="' + good + '"><b>' + esc_(k.value) + '</b> ' + esc_(k.unit) + '</td><td>' + (k.prev === null ? '—' : esc_(k.prev) + ' ' + esc_(k.unit)) + '</td></tr>'; }).join('') + '</table>');
+  if (P.reviews.length) o.push('<table class="t"><tr><th>المهمة اللي فاتت</th><th>اتعملت؟</th><th>القرار</th><th>حصل إيه / الدليل</th></tr>' + P.reviews.map(function (r) {
+    var cls = r.Status === C.ST_DONE ? 'good' : (r.Status === C.ST_NOT || r.Status === C.ST_BLOCK) ? 'bad' : 'warnc';
+    return '<tr><td>' + esc_(r.TaskName) + '</td><td class="' + cls + '">' + esc_(r.Status) + '</td><td>' + esc_(r.Decision) + (r.NewDeadline ? '<div class="mut">لحد ' + dt_(r.NewDeadline) + '</div>' : '') + '</td><td>' +
+      [r.Note, r.Result, r.Evidence ? 'الدليل: ' + r.Evidence : '', r.Barriers ? 'العائق: ' + r.Barriers : '', r.Adjustment ? 'التعديل: ' + r.Adjustment : ''].filter(Boolean).map(esc_).join('<br>') + '</td></tr>'; }).join('') + '</table>');
+  if (!P.businessResult && !P.kpis.length && !P.reviews.length) o.push('<div class="mut">' + (P.isFirst ? 'دي أول جلسة (جلسة التشخيص).' : 'متسجلش حاجة.') + '</div>');
+  // 2. focus
+  if (f.Problem) {
+    o.push('<h2>تركيزنا الفترة دي</h2>' + kv('المشكلة', f.Problem) + (f.Causes.length ? '<div class="kv"><span class="lbl">السبب:</span> ' + f.Causes.map(function (c) { return esc_(c.text); }).join('؛ ') + '</div>' : '') +
+      kv('الطريقة', f.Strategy + (f.Supporting ? ' + ' + f.Supporting : '')) + kv('هدفها', f.StrategyAim) + kv('التحسن المتوقع', f.Expected));
+  }
+  // 3. new tasks — complete, as in the library
+  var taskBlock = function (t, i, extra) {
+    var b = '<div class="task"><h3>' + cb + (i + 1) + '. ' + esc_(t.TaskName) + '</h3>' + (extra || '');
+    b += kv('ليه المهمة دي', t.Purpose);
+    if (t.Summary) b += '<div class="eg">' + esc_(t.Summary) + '</div>';
+    if (t.CustomInstructions) b += kv('ملاحظة المنتور', t.CustomInstructions);
+    b += kv('محتاج إيه قبل ما تبدأ', t.Prerequisites) + kv('الوقت التقريبي', t.Time) + kv('التكرار', t.Frequency);
+    if (t.Steps.length) b += '<div class="kv"><span class="lbl">الخطوات:</span></div>' + steps(t.Steps);
+    else if (t.Snapshot) b += '<div class="kv"><span class="lbl">الخطوات:</span></div><ol class="steps">' + str_(t.Snapshot).split('\n').filter(function (x) { return str_(x); }).map(function (x) { return '<li>' + cb + esc_(x) + '</li>'; }).join('') + '</ol>';
+    b += kv('المطلوب في الآخر', t.Deliverable) + kv('الدليل اللي يجيبه الجلسة الجاية', t.Evidence) + kv('نعرف إنها خلصت لما', t.Completion) + kv('النتيجة اللي بنستناها', t.Outcome) + kv('الرقم المستهدف', t.Target) +
+      kv('لو الإمكانيات محدودة', t.Alternative) + kv('خلي بالك', t.Cautions) + kv('هنسأل في الجلسة الجاية', t.ReviewQuestion);
+    return b + '</div>';
+  };
+  o.push('<h2>المهام الجديدة (' + P.newTasks.length + ')</h2>');
+  if (!P.newTasks.length) o.push('<div class="mut">مفيش مهام جديدة الجلسة دي.</div>');
+  P.newTasks.forEach(function (t, i) { o.push(taskBlock(t, i, '<div class="kv"><span class="lbl">آخر ميعاد:</span> <b>' + dt_(t.Deadline) + '</b>' + (t.Responsible ? ' &nbsp;·&nbsp; <span class="lbl">المسؤول:</span> ' + esc_(t.Responsible) : '') + '</div>')); });
+  // 4. continuing tasks — also complete
+  if (P.continuing.length) {
+    o.push('<h2>مهام مستمرة من جلسات قبل كده (' + P.continuing.length + ')</h2>');
+    P.continuing.forEach(function (t, i) { o.push(taskBlock(t, i, '<div class="kv"><span class="lbl">من جلسة:</span> ' + esc_(t.AssignedSessionNo) + ' &nbsp;·&nbsp; <span class="lbl">الميعاد الجديد:</span> <b>' + dt_(t.Deadline) + '</b>' +
+      (t.Adjustment ? ' &nbsp;·&nbsp; <span class="lbl">التعديل:</span> ' + esc_(t.Adjustment) : '') + '</div>')); });
+  }
+  if (P.paused.length) o.push('<div class="kv"><span class="lbl">مهام موقوفة مؤقتًا:</span> ' + P.paused.map(function (c) { return esc_(c.TaskName); }).join('، ') + '</div>');
+  // 5. routines — complete
+  var names = { DAILY: 'كل يوم', WEEKLY: 'كل أسبوع', BIWEEKLY: 'كل أسبوعين', MONTHLY: 'كل شهر', PERIODIC: 'عند الحاجة' };
+  var rc = 0; Object.keys(P.routines).forEach(function (k) { rc += P.routines[k].length; });
+  o.push('<h2>الروتين المستمر (' + rc + ')</h2>');
+  if (!rc) o.push('<div class="mut">مفيش روتين.</div>');
   ['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'PERIODIC'].forEach(function (k) { P.routines[k].forEach(function (r) {
-    rlist.push('<li class="q' + (rlist.length + 1) + '">' + esc_(r.RoutineName) + (r.Code ? ' <span class="pill">' + esc_(r.Code) + '</span>' : '') + ' <span class="mut">' + names[k] + (r.IsNew ? '، جديد' : '') + (r.WhenWhere ? ' — ' + esc_(r.WhenWhere) : '') + '</span>' + boxes(k) + '</li>'); }); });
-  var cont = P.continuing.map(function (c, i) { return '<li class="q' + (i + 1) + '">' + cb + esc_(c.TaskName) + ' <span class="mut">— لحد ' + dt_(c.Deadline) + (c.Adjustment ? '، ' + esc_(c.Adjustment) : '') + '</span></li>'; });
-  var more = function (arr) { return arr.length > 4 ? '<div class="mut rx">+ ' + (arr.length - 4) + ' كمان في الخطة الكاملة</div>' : ''; };
-  o.push('<table class="cols sec"><tr><td style="width:44%"><div class="st">مهام مستمرة (' + P.continuing.length + ')</div>' + (cont.length ? '<ul class="pl">' + cont.join('') + '</ul>' + more(cont) : '<div class="mut">لا توجد.</div>') +
-    (P.paused.length ? '<div class="mut">موقوفة مؤقتًا: ' + P.paused.map(function (c) { return esc_(c.TaskName); }).join('، ') + '</div>' : '') + '</td>' +
-    '<td style="width:56%"><div class="st">الروتين المستمر (' + rlist.length + ')</div>' + (rlist.length ? '<ul class="pl">' + rlist.join('') + '</ul>' + more(rlist) : '<div class="mut">لا يوجد.</div>') + '</td></tr></table>');
-  // recommendations + next session
-  var reco = [];
-  if (P.mentorSummary) reco.push('<div><span class="lbl">كلمة المنتور:</span> ' + esc_(P.mentorSummary) + '</div>');
-  if (P.workloadNote) reco.push('<div><span class="lbl">اتفقنا على:</span> ' + esc_(P.workloadNote) + '</div>');
-  if (P.checklist && P.checklist.gaps.length) reco.push('<div class="opt"><span class="lbl">روتينات لسه محتاجة شغل:</span> ' + P.checklist.gaps.slice(0, 6).map(function (g) { return esc_(g.text); }).join('؛ ') + (P.checklist.gaps.length > 6 ? '…' : '') + '</div>');
-  var bring = uniq_(P.newTasks.map(function (t) { return str_(t.Evidence); }));
-  reco.push('<div><span class="lbl">الجلسة الجاية ' + dt_(P.nextSession) + ' — هات معاك:</span> ' + (bring.length ? bring.map(esc_).join('؛ ') + '، و' : '') + 'أرقام الفترة ودليل الروتين (الكارت أو الدفتر أو صور).' +
-    (h.Readiness ? ' <span class="mut">(استعداد صاحب المشروع: ' + esc_(h.Readiness) + '/5)</span>' : '') + '</div>');
-  o.push('<div class="reco">' + reco.join('') + '</div>');
-  o.push('</div>');
-  if (!forPdf) o.push('<script>(function(){var pg=document.getElementById("pg"),b=document.body,A4=Math.floor(273*96/25.4),F=' + JSON.stringify(SHEET_FITS_) + ';' +
-    'for(var i=0;i<F.length;i++){b.className=F[i];if(pg.scrollHeight<=A4)return;}b.className=F[F.length-1]+" toolong";})();</script>');
-  o.push('</body></html>');
+    var n = k === 'DAILY' ? 7 : 1, days = ''; for (var d = 0; d < n; d++) days += '<span class="cb"></span>';
+    var b = '<div class="task"><h3>' + (r.Code ? esc_(r.Code) + ' — ' : '') + esc_(r.RoutineName) + ' <span class="mut" style="font-weight:400">(' + names[k] + (r.IsNew ? '، جديد' : '') + ')</span></h3>' +
+      '<div class="kv"><span class="lbl">علّم كل مرة تعملها:</span> <span class="days">' + days + '</span></div>';
+    b += kv('إمتى وفين', r.WhenWhere) + kv('ليه', r.Purpose) + (r.Summary && r.Summary !== r.Purpose ? '<div class="eg">' + esc_(r.Summary) + '</div>' : '') + kv('إمتى تتعمل', r.WhenToDo) + kv('إزاي باختصار', r.Mechanism);
+    if (r.Steps.length) b += '<div class="kv"><span class="lbl">الخطوات:</span></div>' + steps(r.Steps);
+    b += kv('المسؤول', r.Responsible) + kv('المخرج', r.Output) + kv(r.Code ? 'هنتابعه بـ' : 'الدليل', r.Indicator || r.Evidence) + kv('ملاحظة المنتور', r.CustomNote) + kv('بديل بسيط', r.Paper);
+    o.push(b + '</div>'); }); });
+  // 6. Assiut checklist — every item
+  if (P.checklistItems.length) {
+    var ck = P.checklist || {};
+    o.push('<h2>تشيك ليست الروتينات — الدرجة ' + (ck.pct === null || ck.pct === undefined ? '—' : ck.pct + '%') + (ck.firstSessionNo && ck.firstSessionNo !== h.SessionNo && ck.firstPct !== null ? ' (أول جلسة ' + ck.firstPct + '%)' : '') + '</h2>');
+    o.push('<table class="t"><tr><th>المجال</th><th>الروتين</th><th>التكرار</th><th>الوضع</th><th>ملاحظة</th></tr>' + P.checklistItems.map(function (c) {
+      var cls = c.value === C.CL_DOES ? 'good' : c.value === C.CL_NO ? 'bad' : c.value === C.CL_SOME ? 'warnc' : 'mut';
+      return '<tr><td>' + esc_(c.Domain) + '</td><td>' + esc_(c.text) + '</td><td>' + esc_(c.freq) + '</td><td class="' + cls + '">' + esc_(c.value) + '</td><td>' + esc_(c.note) + '</td></tr>'; }).join('') + '</table>');
+  }
+  // 7. mentor message + next session
+  var bring = uniq_(P.newTasks.concat(P.continuing).map(function (t) { return str_(t.Evidence); }));
+  o.push('<h2>كلمة المنتور والجلسة الجاية</h2>');
+  if (P.mentorSummary) o.push('<div class="note">' + esc_(P.mentorSummary) + '</div>');
+  if (P.workloadNote) o.push(kv('اتفقنا على', P.workloadNote));
+  o.push('<div class="kv"><span class="lbl">الجلسة الجاية:</span> <b>' + dt_(P.nextSession) + '</b></div>');
+  o.push('<div class="kv"><span class="lbl">هات معاك:</span></div><ul style="margin:2px 0;padding-inline-start:20px">' + bring.map(function (x) { return '<li>' + esc_(x) + '</li>'; }).join('') +
+    '<li>أرقام الفترة (البيع، المصاريف، الطلبات…)</li><li>دليل الروتين: الكارت أو الدفتر أو صور</li></ul>');
+  o.push('</div></body></html>');
   return o.join('');
 }
 

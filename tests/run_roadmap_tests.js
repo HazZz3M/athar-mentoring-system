@@ -100,21 +100,41 @@ ok(d.roadmap && d.roadmap.projects === 1 && d.roadmap.avgFirst === 7.4 && d.road
 ok(d.roadmap.rows[0].change === 1.9, 'dashboard change per project');
 ok(run(`apiIntegrityCheck()`).ok, 'integrity check still clean');
 
-console.log('== One-page A4 session summary');
+console.log('== Session sheet (full print-out, nothing hidden)');
 const sheet = run(`apiSessionSheet('${c3.session.SessionID}')`);
-ok(sheet.reviews.length === 0 && sheet.checklist.pct === 9.3 && sheet.nextSession === '2026-10-26', 'summary data: reviews, checklist score, next session');
-const a4 = run(`apiSessionSheetHtml('${c3.session.SessionID}')`);
-ok(/@page\{size:A4/.test(a4) && a4.includes('ملخص الجلسة رقم 3') && a4.includes('ي-٠١') && a4.includes('كل يوم قبل النوم') && a4.includes('تشيك ليست الروتينات'), 'A4 HTML: page size, title, routine codes + «إمتى وفين», checklist');
-ok(a4.includes('<script>') && !run(`apiSessionSheetHtml('${c3.session.SessionID}', true)`).includes('<script>'), 'browser version fits itself; Drive-PDF version has no script (fit level chosen on the server)');
-ok(run(`shortText_('اكتب كل مصروف في الدفتر. وبعدين اجمعه آخر الأسبوع')`) === 'اكتب كل مصروف في الدفتر…', 'step text shortened to its first sentence (words cut before type shrinks)');
-// a long session: many steps → the server picks a shortening level before any smaller font
-const big = { newTasks: [1, 2, 3].map(i => ({ TaskName: 'مهمة ' + i, Deadline: '2026-11-01', Deliverable: 'مخرج', Evidence: 'صورة', Alternative: 'بديل بسيط جدًا للمشروع الصغير',
-  Steps: [1, 2, 3, 4, 5].map(k => ({ title: 'خطوة ' + k, text: 'تعليمات طويلة '.repeat(16) })) })),
-  reviews: [], continuing: [], paused: [], routines: { DAILY: [], WEEKLY: [], BIWEEKLY: [], MONTHLY: [], PERIODIC: [] }, kpis: [],
-  focus: { Problem: 'م', Causes: [], Strategy: 'س', Supporting: '', Expected: 'ن' }, checklist: null, mentorSummary: '', workloadNote: '', businessResult: '' };
-const lv = run(`sheetFitLevel_(${J(big)})`);
-ok(lv >= 1 && lv <= 2, 'long content: shortened (level ' + lv + ') without shrinking the font');
-ok(run(`sheetFitLevel_(${J(Object.assign({}, big, { newTasks: big.newTasks.slice(0, 1) }))})`) === 0, 'short content stays complete (level 0)');
+ok(sheet.checklist.pct === 9.3 && sheet.nextSession === '2026-10-26' && sheet.checklistItems.length === 28, 'sheet data: checklist score and all 28 items');
+const html3 = run(`apiSessionSheetHtml('${c3.session.SessionID}')`);
+ok(html3.includes('ي-٠١') && html3.includes('كل يوم قبل النوم') && html3.includes('تشيك ليست الروتينات') && html3.includes('عدد الأيام المكتوبة من ٧'), 'routines with code, «إمتى وفين» and the library indicator');
+ok(html3.includes('>طباعة<') && !run(`apiSessionSheetHtml('${c3.session.SessionID}', true)`).includes('>طباعة<'), 'print button on screen only, not in the Drive PDF');
+// a session with library tasks: every step, every check question and every library field is printed in full
+const c4 = run(`apiStartSession('${pA.ProjectID}','','2026-10-26')`);
+const t4 = L.LIB_Actions.filter(a => a.ProblemID === 'P-FN01').slice(0, 2).map(a => ({ TaskID: a.TaskID, Deadline: '2026-11-01', OffStrategyReason: 'x' }));
+run(`apiFinalizeSession('${c4.session.SessionID}', ${J(base({ planEnd: '2026-11-02', businessResultNote: 'x', checklist: cl2, newTasks: t4,
+  routineReviews: c4.routines.map(r => rr(r, 'نعم')) }))})`);
+const html4 = run(`apiSessionSheetHtml('${c4.session.SessionID}')`);
+const steps4 = t4.flatMap(t => L.steps[t.TaskID]);
+ok(steps4.length > 4 && steps4.every(st => html4.includes(run(`esc_(${J(st.Instruction)})`)) && (!st.CheckQuestion || html4.includes(run(`esc_(${J(st.CheckQuestion)})`)))), 'every step instruction and check question printed verbatim (' + steps4.length + ' steps)');
+ok(t4.every(t => { const a = L.action[t.TaskID]; return ['Purpose', 'SummaryEg', 'Deliverable', 'Evidence', 'Cautions', 'LowResourceAlternative', 'CompletionIndicator', 'OutcomeIndicator'].every(k => !a[k] || html4.includes(run(`esc_(${J(a[k])})`))); }),
+  'every library field of each task printed in full');
+ok(!/class="(short|mx|tx|rx)/.test(html4) && !/display:none/.test(html4.replace(/@media print\{[^}]*\}[^}]*\}/, '')), 'nothing hidden or shortened on the printed page');
 
+console.log('== Simple session (default mentor screen)');
+{
+  const ps = run(`apiCreateProject({ProjectName:'كشك',OwnerName:'أم أحمد',BusinessType:'تجارة',MentorID:'${mentor.MentorID}',Governorate:'سوهاج',Round:'R',StartDate:'2026-10-01'})`);
+  const s1 = run(`apiStartSession('${ps.ProjectID}','','2026-10-05')`);
+  const tasks = L.LIB_Actions.filter(a => a.ProblemID === 'P-MK03').slice(0, 2).map(a => ({ TaskID: a.TaskID, Deadline: '2026-10-11' }));
+  const r = run(`apiFinalizeSession('${s1.session.SessionID}', ${J({ mode: 'simple', planEnd: '2026-10-12', diagnosis: { ProblemID: 'P-MK03' }, newTasks: tasks, reviews: [], routineReviews: [] })})`);
+  ok(r.ok && r.newTasks === 2, 'simple session saves with just a problem and tasks (no causes, no strategy, no readiness)');
+  const sv = X.DB.tables.DB_Sessions.find(x => x.SessionID === s1.session.SessionID);
+  const st = L.strategy[sv.PrimaryStrategyID];
+  ok(st && st.ProblemID === 'P-MK03' && sv.SessionMode === 'بسيطة', 'approach inferred from the chosen tasks (' + sv.PrimaryStrategyID + '), session marked «بسيطة»');
+  const s2 = run(`apiStartSession('${ps.ProjectID}','','2026-10-12')`);
+  const revs = s2.openAssignments.map((a, i) => ({ AssignmentID: a.AssignmentID, Status: i ? 'لم تبدأ' : 'مكتملة' }));
+  const r2 = run(`apiFinalizeSession('${s2.session.SessionID}', ${J({ mode: 'simple', planEnd: '2026-10-19', reviews: revs, routineReviews: [] })})`);
+  ok(r2.ok, 'second simple session: only statuses picked, problem carried from the previous session');
+  const asg = X.DB.tables.DB_TaskAssignments.filter(a => a.ProjectID === ps.ProjectID);
+  ok(asg.filter(a => a.IsOpen === 'لا').length === 1 && asg.filter(a => a.IsOpen === 'نعم' && a.CurrentDeadline === '2026-10-19').length === 1,
+    'done task closes; not-started task continues to the next session date');
+}
 console.log(`ROADMAP RESULT: ${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

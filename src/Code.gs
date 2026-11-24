@@ -54,15 +54,16 @@ function api(fn, argsJson) {
 function webAppUrl_() { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } }
 
 /* ---------------- PDF plan ---------------- */
-function savePlanPdf_(sessionId) {
+function savePlanPdf_(sessionId, kind) {
   var plan = apiGetPlan(sessionId);
-  var html = apiPlanHtml(sessionId);
-  var name = 'خطة ' + plan.header.ProjectName + ' - جلسة ' + plan.header.SessionNo + ' - ' + plan.header.SessionDate;
+  var a4 = kind === 'a4';
+  var html = a4 ? apiSessionSheetHtml(sessionId, true) : apiPlanHtml(sessionId);
+  var name = (a4 ? 'ملخص جلسة ' : 'خطة ') + plan.header.ProjectName + ' - جلسة ' + plan.header.SessionNo + ' - ' + plan.header.SessionDate;
   var pdf = Utilities.newBlob(html, 'text/html', name + '.html').getAs('application/pdf').setName(name + '.pdf');
   var root = getOrCreateFolder_(DriveApp.getRootFolder(), 'Athar Mentoring Plans');
   var folder = getOrCreateFolder_(root, plan.header.ProjectName);
   var file = folder.createFile(pdf);
-  DB.withLock(function () { DB.update('DB_Sessions', 'SessionID', sessionId, { PlanUrl: file.getUrl() }); });   // PDF built outside the lock; only the write is locked
+  if (!a4) DB.withLock(function () { DB.update('DB_Sessions', 'SessionID', sessionId, { PlanUrl: file.getUrl() }); });   // PDF built outside the lock; only the write is locked
   return { url: file.getUrl(), name: file.getName() };
 }
 function getOrCreateFolder_(parent, name) {

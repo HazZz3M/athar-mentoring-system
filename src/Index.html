@@ -147,7 +147,7 @@ function go(v){if(S.view==='session'&&v!=='session'&&S.dirty){saveDraft(true);}S
 function render(){var a=document.getElementById('app'),f=document.getElementById('foot');f.innerHTML='';
   if(S.view==='projects')a.innerHTML=vProjects();else if(S.view==='journey')a.innerHTML=vJourney();else if(S.view==='session'){a.innerHTML=vSession();f.innerHTML=vFoot();}
   else if(S.view==='plan')a.innerHTML=vPlan();else if(S.view==='dashboard')a.innerHTML=vDash();
-  if(S.view==='plan'&&S.plan){var fr=document.getElementById('planFrame');if(fr)fr.srcdoc=S.plan.html;}}
+  if(S.view==='plan'&&S.plan){var fr=document.getElementById('planFrame');if(fr)fr.srcdoc=S.plan.mode==='a4'&&S.plan.a4?S.plan.a4:S.plan.html;}}
 
 /* ============================================================ projects */
 function loadProjects(){run(call('listProjects',{includeTest:S.includeTest}),'تحميل المشروعات…').then(function(p){S.projects=p;render();});}
@@ -521,7 +521,8 @@ function st10(){var e=clientChecks(),w=clientWarnings();return '<div class="card
 /* ============================================================ plan */
 function openPlan(sid){Promise.all([call('planHtml',sid),call('planText',sid),call('plan',sid)]).then(function(r){S.plan={sid:sid,html:r[0],text:r[1],data:r[2]};S.view='plan';render();window.scrollTo(0,0);}).catch(showErr);}
 function vPlan(){var p=S.plan;if(!p)return '';var phone=(S.journey&&S.journey.project.Phone||'').replace(/\D/g,'');if(phone.indexOf('0')===0)phone='2'+phone;
-  return '<div class="row noprint"><button class="btn ghost" data-act="backToJourney">→ رحلة المشروع</button><span class="grow"></span><button class="btn sec" data-act="printPlan">🖨 طباعة / حفظ PDF من المتصفح</button>'+(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">📄 حفظ PDF في Drive</button>')+
+  var a4=p.mode==='a4';
+  return '<div class="row noprint"><button class="btn ghost" data-act="backToJourney">→ رحلة المشروع</button><span class="chip'+(a4?'':' on')+'" data-act="planMode" data-v="plan">الخطة الكاملة</span><span class="chip'+(a4?' on':'')+'" data-act="planMode" data-v="a4">📄 ملخص الجلسة (ورقة A4)</span><span class="grow"></span><button class="btn sec" data-act="printPlan">🖨 طباعة / حفظ PDF من المتصفح</button>'+(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">📄 حفظ PDF في Drive</button>')+
   '<button class="btn sec" data-act="copyPlan">📋 نسخ نص الخطة</button><a class="btn" style="text-decoration:none" target="_blank" href="https://wa.me/'+(phone||'')+'?text='+encodeURIComponent(p.text)+'">واتساب</a></div><iframe class="plan" id="planFrame" title="الخطة الأسبوعية"></iframe>';}
 
 /* ============================================================ dashboard */
@@ -596,7 +597,8 @@ document.addEventListener('click',function(e){var el=e.target.closest('[data-act
   readiness:function(){S.d.readiness=v;S.dirty=true;keepScroll(render)},
   finalize:finalize,discard:function(){if(!confirm('حذف المسودة؟ لن تتأثر أي جلسة محفوظة.'))return;run(call('discardDraft',S.ctx.session.SessionID)).then(function(){S.dirty=false;openProject(S.ctx.project.ProjectID)})},
   printPlan:function(){var f=document.getElementById('planFrame');f.contentWindow.focus();f.contentWindow.print()},
-  pdfPlan:function(){run(call('savePlanPdf',S.plan.sid),'إنشاء PDF في Google Drive…').then(function(r){modal('<h3>تم حفظ الخطة</h3><a href="'+esc(r.url)+'" target="_blank">'+esc(r.name)+'</a><div class="row" style="justify-content:flex-end"><button class="btn" data-act="closeModal">حسنًا</button></div>')})},
+  planMode:function(){if(v==='a4'&&!S.plan.a4){run(call('sessionSheetHtml',S.plan.sid),'تجهيز ملخص الجلسة…').then(function(h){S.plan.a4=h;S.plan.mode='a4';render()});return;}S.plan.mode=v;render()},
+  pdfPlan:function(){run(call('savePlanPdf',S.plan.sid,S.plan.mode==='a4'?'a4':''),'إنشاء PDF في Google Drive…').then(function(r){modal('<h3>تم حفظ الخطة</h3><a href="'+esc(r.url)+'" target="_blank">'+esc(r.name)+'</a><div class="row" style="justify-content:flex-end"><button class="btn" data-act="closeModal">حسنًا</button></div>')})},
   copyPlan:function(){var t=S.plan.text;if(navigator.clipboard)navigator.clipboard.writeText(t).then(function(){toast('تم النسخ')},function(){prompt('انسخ النص:',t)});else prompt('انسخ النص:',t)},
   applyDash:loadDash,resetDash:function(){S.df={};loadDash()}};
   if(H[a]){e.preventDefault();H[a]();}});

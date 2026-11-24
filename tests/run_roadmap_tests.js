@@ -100,5 +100,21 @@ ok(d.roadmap && d.roadmap.projects === 1 && d.roadmap.avgFirst === 7.4 && d.road
 ok(d.roadmap.rows[0].change === 1.9, 'dashboard change per project');
 ok(run(`apiIntegrityCheck()`).ok, 'integrity check still clean');
 
+console.log('== One-page A4 session summary');
+const sheet = run(`apiSessionSheet('${c3.session.SessionID}')`);
+ok(sheet.reviews.length === 0 && sheet.checklist.pct === 9.3 && sheet.nextSession === '2026-10-26', 'summary data: reviews, checklist score, next session');
+const a4 = run(`apiSessionSheetHtml('${c3.session.SessionID}')`);
+ok(/@page\{size:A4/.test(a4) && a4.includes('ملخص الجلسة رقم 3') && a4.includes('ي-٠١') && a4.includes('كل يوم قبل النوم') && a4.includes('تشيك ليست الروتينات'), 'A4 HTML: page size, title, routine codes + «إمتى وفين», checklist');
+ok(a4.includes('<script>') && !run(`apiSessionSheetHtml('${c3.session.SessionID}', true)`).includes('<script>'), 'browser version fits itself; Drive-PDF version has no script (fit level chosen on the server)');
+ok(run(`shortText_('اكتب كل مصروف في الدفتر. وبعدين اجمعه آخر الأسبوع')`) === 'اكتب كل مصروف في الدفتر…', 'step text shortened to its first sentence (words cut before type shrinks)');
+// a long session: many steps → the server picks a shortening level before any smaller font
+const big = { newTasks: [1, 2, 3].map(i => ({ TaskName: 'مهمة ' + i, Deadline: '2026-11-01', Deliverable: 'مخرج', Evidence: 'صورة', Alternative: 'بديل بسيط جدًا للمشروع الصغير',
+  Steps: [1, 2, 3, 4, 5].map(k => ({ title: 'خطوة ' + k, text: 'تعليمات طويلة '.repeat(16) })) })),
+  reviews: [], continuing: [], paused: [], routines: { DAILY: [], WEEKLY: [], BIWEEKLY: [], MONTHLY: [], PERIODIC: [] }, kpis: [],
+  focus: { Problem: 'م', Causes: [], Strategy: 'س', Supporting: '', Expected: 'ن' }, checklist: null, mentorSummary: '', workloadNote: '', businessResult: '' };
+const lv = run(`sheetFitLevel_(${J(big)})`);
+ok(lv >= 1 && lv <= 2, 'long content: shortened (level ' + lv + ') without shrinking the font');
+ok(run(`sheetFitLevel_(${J(Object.assign({}, big, { newTasks: big.newTasks.slice(0, 1) }))})`) === 0, 'short content stays complete (level 0)');
+
 console.log(`ROADMAP RESULT: ${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

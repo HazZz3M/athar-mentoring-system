@@ -88,6 +88,9 @@ function call(fn){ var args=[].slice.call(arguments,1);
     var done=function(txt){ var r=typeof txt==='string'?JSON.parse(txt):txt; if(r.ok) res(r.data); else { var e=new Error(r.error); e.details=r.details; rej(e);} };
     if(window.google&&google.script&&google.script.run){ google.script.run.withSuccessHandler(done).withFailureHandler(function(e){rej(e)}).api(fn, JSON.stringify(args)); }
     else if(window.LocalAPI){ setTimeout(function(){ try{ done(window.LocalAPI(fn,args)); }catch(e){ rej(e);} },60); }
+    else if(window.ATHAR_API){ // GitHub Pages: plain POST (text/plain = no CORS preflight) to the Apps Script web app
+      fetch(window.ATHAR_API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({fn:fn,args:args,user:mentorLabel()})})
+        .then(function(r){return r.text()}).then(function(t){try{done(t)}catch(e){rej(new Error('رد غير متوقع من الخادم'))}},function(){rej(new Error('تعذر الاتصال بالخادم — تأكد من الإنترنت وحاول تاني'))}); }
     else rej(new Error('لا يوجد اتصال بالخادم'));
   });
 }
@@ -135,12 +138,20 @@ function appliesMode(a,mode){a=String(a||'');if(!a||a==='كل المشاريع'|
 var CL_SCORE={'بيعملها':2,'ساعات':1,'لأ':0};
 function clScore(vals){var sc=vals.filter(function(v){return CL_SCORE[v]!==undefined});var sum=sc.reduce(function(a,v){return a+CL_SCORE[v]},0);return {pct:sc.length?Math.round(sum/(2*sc.length)*1000)/10:null,n:sc.length};}
 function clTag(v){var c={'بيعملها':'ok','ساعات':'warn','لأ':'bad','مش بيخصه':'gray'}[v]||'gray';return v?'<span class="tag '+c+'">'+esc(v)+'</span>':'';}
+function lsGet(k){try{return localStorage.getItem(k)||''}catch(e){return ''}}
+function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function mentorLabel(){var m=S.boot&&S.mentorId?S.boot.mentors.filter(function(x){return x.MentorID===S.mentorId})[0]:null;return m?m.MentorName+' ('+m.MentorID+')':'';}
+/** GitHub Pages app: no sign-in — the mentor picks their name once per device. */
+function pickMentorModal(){var ms=S.boot.mentors.filter(function(m){return m.DataType!=='تجريبي'||S.includeTest});
+  modal('<h3>أهلًا! اختار اسمك</h3><div class="sm mut">هيتحفظ على الجهاز ده، وتقدر تغيّره من القائمة فوق.</div><div style="display:grid;gap:6px;margin-top:10px">'+(ms.length?ms:S.boot.mentors).map(function(m){return '<button class="btn sec" data-act="pickMentor" data-v="'+esc(m.MentorID)+'">'+esc(m.MentorName)+'</button>'}).join('')+'</div>');}
 function init(){
   run(call('bootstrap'),'تحميل المكتبة…').then(function(b){S.boot=b;S.L=indexLib(b.library);
     var sel=document.getElementById('mentorSel');sel.innerHTML='<option value="">كل المنتورين</option>'+b.mentors.map(function(m){return '<option value="'+esc(m.MentorID)+'">'+esc(m.MentorName)+(m.DataType==='تجريبي'?' (تجريبي)':'')+'</option>'}).join('');
-    var me=b.mentors.filter(function(m){return m.Email&&m.Email===b.user})[0];if(me){S.mentorId=me.MentorID;sel.value=me.MentorID;}
+    var me=b.mentors.filter(function(m){return m.Email&&m.Email===b.user})[0];
+    if(!me&&window.ATHAR_API){var saved=lsGet('athar_mentor');me=b.mentors.filter(function(m){return m.MentorID===saved})[0];}
+    if(me){S.mentorId=me.MentorID;sel.value=me.MentorID;}
     if(window.DEMO_MODE){S.includeTest=true;document.getElementById('testChk').checked=true;}
-    go('projects');});
+    go('projects');if(window.ATHAR_API&&!me)pickMentorModal();});
 }
 function go(v){if(S.view==='session'&&v!=='session'&&S.dirty){saveDraft(true);}S.view=v;['projects','dashboard'].forEach(function(n){document.getElementById('nav-'+n).classList.toggle('on',n===v||(n==='projects'&&(v==='journey'||v==='session'||v==='plan')))});
   if(v==='projects')loadProjects();else if(v==='dashboard')loadDash();else render();window.scrollTo(0,0);}
@@ -555,7 +566,7 @@ document.addEventListener('input',function(e){var b=e.target.getAttribute('data-
   if(a==='jsearch'){S.jf.q=e.target.value;clearTimeout(window._jq);window._jq=setTimeout(function(){keepScroll(render);var x=document.getElementById('jq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},300);}});
 document.addEventListener('change',function(e){var t=e.target,a=t.getAttribute('data-act'),b=t.getAttribute('data-bind');
   if(b&&S.d){setP(S.d,b,t.value);S.dirty=true;if(t.tagName==='SELECT'||/Deadline|Date|planEnd/.test(b))keepScroll(render);}
-  if(a==='mentor'){S.mentorId=t.value;if(S.view==='dashboard')loadDash();else if(S.view==='projects')render();}
+  if(a==='mentor'){S.mentorId=t.value;if(window.ATHAR_API&&t.value)lsSet('athar_mentor',t.value);if(S.view==='dashboard')loadDash();else if(S.view==='projects')render();}
   if(a==='toggleTest'){S.includeTest=t.checked;if(S.view==='dashboard')loadDash();else loadProjects();}
   if(a==='jf'){S.jf[t.getAttribute('data-k')]=t.value;var all=t.value?1:0;if(all)S.journey.sessions.forEach(function(s){S.openCards['ses_'+s.SessionID]=1});render();}
   if(a==='df'||a==='dfi'){S.df[t.getAttribute('data-k')]=t.value;if(a==='df')loadDash();}
@@ -591,6 +602,7 @@ document.addEventListener('click',function(e){var el=e.target.closest('[data-act
   addCustom:function(){S.d.newTasks.push({TaskID:'CUSTOM',TaskName:'',CustomInstructions:'',Deadline:addDays(S.d.planEnd,-1),OffStrategyReason:''});S.dirty=true;render()},
   delTask:function(){S.d.newTasks.splice(+el.getAttribute('data-i'),1);S.dirty=true;keepScroll(render)},
   addRoutine:function(){S.d.newRoutines.push({RoutineID:v,StartDate:S.d.sessionDate,Responsible:'',CustomNote:'',WhenWhere:''});S.dirty=true;keepScroll(render);toast('أضيف الروتين')},
+  pickMentor:function(){S.mentorId=v;lsSet('athar_mentor',v);document.getElementById('mentorSel').value=v;closeModal();render()},
   setMode:function(){S.d.projectMode=v;applyModeNA(S.d,S.ctx);S.dirty=true;keepScroll(render)},
   clCopy:function(){var prev=S.ctx.previousChecklist||{},n=0;S.ctx.checklistItems.forEach(function(it){var c=S.d.checklist[it.ItemID]=S.d.checklist[it.ItemID]||{Value:'',Note:''};if(!c.Value&&prev[it.ItemID]&&prev[it.ItemID].Value){c.Value=prev[it.ItemID].Value;n++;}});S.dirty=true;keepScroll(render);toast('اتنسخ '+n+' بند — راجعهم مع صاحب المشروع')},
   delRoutine:function(){S.d.newRoutines.splice(+el.getAttribute('data-i'),1);S.dirty=true;keepScroll(render)},

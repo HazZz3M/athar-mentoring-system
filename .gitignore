@@ -6,3 +6,4 @@ tests/dashboard_sheet.json
 tests/db_after_tests.json
 tests/plan_sample.html
 node_modules/
+_site/

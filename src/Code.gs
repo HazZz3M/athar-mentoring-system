@@ -4,6 +4,7 @@
  * Files: Code.gs, Core.gs, SheetDb.gs, Schema.gs, TestData.gs, Index.html, appsscript.json
  */
 var DB = null;
+var REQUEST_USER_ = '';   // mentor chosen on the GitHub Pages app (no sign-in): used for «CreatedBy» and the history log
 var APP_TITLE = 'أثر — نظام المنتورينج ومتابعة الأداء';
 
 function useSheets_() { DB = SheetDb_(); resetLibCache_(); return DB; }
@@ -35,6 +36,19 @@ function doGet(e) {
   }
   return HtmlService.createHtmlOutputFromFile('Index').setTitle(APP_TITLE)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * JSON API for the GitHub Pages app (hazzz3m.github.io/athar-mentoring-system).
+ * The page POSTs {fn, args, user} as text/plain (no CORS preflight); the answer is the same JSON as api().
+ * Deployed with access «Anyone» and no sign-in, by decision of the program owner (2026-11-24).
+ */
+function doPost(e) {
+  var body = {};
+  try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (x) { body = {}; }
+  REQUEST_USER_ = String(body.user || '').slice(0, 120);
+  var out = body.fn ? api(String(body.fn), JSON.stringify(body.args || [])) : JSON.stringify({ ok: false, error: 'طلب غير صالح' });
+  return ContentService.createTextOutput(out).setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Single bridge used by the UI: google.script.run.api(fn, JSON.stringify(args)) */

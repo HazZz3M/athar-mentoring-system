@@ -46,7 +46,8 @@ const ctx = {
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   Session: { getActiveUser: () => ({ getEmail: () => 'mentor@athareg.com' }), getEffectiveUser: () => ({ getEmail: () => 'mentor@athareg.com' }), getScriptTimeZone: () => 'Africa/Cairo' },
   Utilities: { formatDate: (d, tz, f) => { const s = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); return f.includes('HH') ? s + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : s; } },
-  ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/mock' }) }
+  ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/mock' }) },
+  ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ t, setMimeType() { return this; }, getContent() { return this.t; } }) }
 };
 vm.createContext(ctx);
 for (const f of ['Schema.gs', 'Core.gs', 'SheetDb.gs', 'TestData.gs', 'RoadmapData.gs', 'Code.gs']) vm.runInContext(fs.readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f });
@@ -108,6 +109,18 @@ fs.writeFileSync(path.join(__dirname, 'dashboard_sheet.json'), JSON.stringify(da
   ok(!!savedRow, 'a finalized session exists for the autosave check');
   const r = savedRow ? call('saveDraft', savedRow[sk.indexOf('SessionID')], '{}') : { ok: true };
   ok(!r.ok && /محفوظة/.test(r.error), 'autosave cannot overwrite a finalized session');
+}
+// ---- GitHub Pages JSON API (no sign-in; mentor picks a name)
+{
+  const post = (body) => JSON.parse(vm.runInContext('doPost(' + JSON.stringify({ postData: { contents: JSON.stringify(body) } }) + ').getContent()', ctx));
+  const b = post({ fn: 'bootstrap', args: [], user: 'سارة (M-001)' });
+  ok(b.ok && b.data.library.LIB_Actions.length === 68 && b.data.user === 'سارة (M-001)', 'doPost bootstrap returns the library; chosen mentor used as the user');
+  const m = post({ fn: 'createMentor', args: [{ MentorName: 'منتور من GitHub' }], user: 'سارة (M-001)' });
+  const pr = post({ fn: 'createProject', args: [{ ProjectName: 'مشروع ويب', OwnerName: 'و', BusinessType: 'تجارة', MentorID: m.data.MentorID }], user: 'سارة (M-001)' });
+  const pk = ctx.SCHEMA.DB_Projects;
+  ok(pr.ok && sheets.DB_Projects.data.some(r => r[pk.indexOf('ProjectID')] === pr.data.ProjectID && r[pk.indexOf('CreatedBy')] === 'سارة (M-001)'), 'doPost writes through the same locked API and records who did it');
+  ok(post({ fn: 'nope', args: [] }).ok === false && post({}).ok === false, 'unknown or empty requests are refused');
+  vm.runInContext("REQUEST_USER_=''", ctx);
 }
 console.log(`SheetDb RESULT: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

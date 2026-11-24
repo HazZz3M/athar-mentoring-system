@@ -4,8 +4,10 @@
 
 - **الشيت:** [Athar_Mentoring_System](https://docs.google.com/spreadsheets/d/1l8b-gdD37ia5_VUoKaWjvha1kT8IVMygbjiKXLCvS0Q/edit)
 - **مشروع Apps Script المربوط بالشيت:** `1N3eVDXTxawOH4GTf9G5Rlu2dB7oHE99jbEP0gC2rmngk8YoJoCVn1mTv`
-- **رابط المنتورين (Web App، حسابات athareg.com فقط):**
-  https://script.google.com/a/macros/athareg.com/s/AKfycbxUQNJLkmCIMxjdPmpX9T7hOQCJ1_J7n-EWUJYvPfWEe_PlgpctQlptozMqmK2FpdmV5A/exec
+- **صفحة المنتورين (GitHub Pages):** https://hazzz3m.github.io/athar-mentoring-system/
+  المنتور بيفتح الرابط ويختار اسمه، والجهاز بيفتكره المرة الجاية. **مفيش تسجيل دخول ولا حماية**، بقرار من صاحب البرنامج (24 نوفمبر 2026): أي حد معاه الرابط يقدر يشوف البيانات ويعدّلها.
+- **الـ API (Apps Script):** https://script.google.com/macros/s/AKfycbxUQNJLkmCIMxjdPmpX9T7hOQCJ1_J7n-EWUJYvPfWEe_PlgpctQlptozMqmK2FpdmV5A/exec
+  الصفحة بتبعت `{fn, args, user}` لـ `doPost`، اللي بيمرّرها لنفس الـ API بنفس القفل.
 
 ## محتوى الريبو
 
@@ -14,6 +16,7 @@
 | `src/` | كود Apps Script كما يُرفع للشيت: `Code.gs` (القائمة، الـ Web App، PDF، الإعداد)، `Core.gs` (منطق الجلسات والتشخيص والمؤشرات)، `SheetDb.gs` (القراءة والكتابة في الشيت + القفل)، `Schema.gs`، `TestData.gs`، `Index.html` (واجهة المنتور)، `appsscript.json` |
 | `tests/` | اختبارات تشتغل بـ Node بدون Google: منطق النظام (47) + محاكاة الشيت والقفل (23) + خريطة الطريق وورقة A4 (44) |
 | `template/` | ملف Excel الأصلي (المكتبة + البيانات التجريبية) ونسخة Demo تعمل بدون إنترنت |
+| `.github/workflows/pages.yml` + `tools/build_pages.js` | بيبني صفحة GitHub Pages من `src/Index.html` نفسه، مع عنوان الـ API اللي في `pages.config.json` |
 | `.github/workflows/deploy.yml` | أي تعديل على `main` بيتختبر، ولو الاختبارات نجحت بيترفع على الشيت ويتحدث الـ Web App بنفس الرابط |
 
 ## الربط بين GitHub والشيت

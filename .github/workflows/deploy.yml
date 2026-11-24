@@ -30,7 +30,7 @@ jobs:
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
         run: |
-          if [ -z "$CLASPRC_JSON" ]; then echo "::error::Secret CLASPRC_JSON is missing (see README)"; exit 1; fi
+          if [ -z "$CLASPRC_JSON" ]; then echo "::error::Secret CLASPRC_JSON is missing — see README (الإعداد لمرة واحدة)"; exit 1; fi
           printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
 
       - name: Push code to the Apps Script project bound to the sheet
@@ -38,7 +38,7 @@ jobs:
 
       - name: Update the live web app (same URL for mentors)
         env:
-          DEPLOYMENT_ID: ${{ vars.DEPLOYMENT_ID }}
+          # The mentors' web app deployment (not a secret). Updating it keeps the same URL.
+          DEPLOYMENT_ID: AKfycbxUQNJLkmCIMxjdPmpX9T7hOQCJ1_J7n-EWUJYvPfWEe_PlgpctQlptozMqmK2FpdmV5A
         run: |
-          if [ -z "$DEPLOYMENT_ID" ]; then echo "::warning::DEPLOYMENT_ID variable not set; code pushed but web app version not updated"; exit 0; fi
           clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA::7}"

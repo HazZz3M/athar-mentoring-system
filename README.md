@@ -30,10 +30,11 @@ push على main ← GitHub Actions: npm test ← clasp push (الكود للش�
    ```bash
    npm install -g @google/clasp@2.4.2
    clasp login            # يفتح المتصفح للموافقة
-   cat ~/.clasprc.json    # انسخ المحتوى كله في الـ secret
+   # Windows:  type %USERPROFILE%\.clasprc.json
+   # Mac/Linux: cat ~/.clasprc.json
+   # انسخ المحتوى كله في الـ secret
    ```
-2. **Variable اسمه `DEPLOYMENT_ID`** (نفس الصفحة ← Variables):
-   `AKfycbxUQNJLkmCIMxjdPmpX9T7hOQCJ1_J7n-EWUJYvPfWEe_PlgpctQlptozMqmK2FpdmV5A`
+2. معرف الـ Web App موجود جوه ملف الـ workflow نفسه (`DEPLOYMENT_ID`)، ومش محتاج إعداد.
 3. لازم يكون **Google Apps Script API** مفعّل في https://script.google.com/home/usersettings، وهو مفعّل بالفعل.
 
 > ملف `.clasprc.json` فيه صلاحية الدخول على حسابك. ماينفعش يترفع على الريبو (موجود في `.gitignore`)، ومكانه الـ Secret بس.

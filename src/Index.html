@@ -113,6 +113,7 @@ select{max-width:100%;text-overflow:ellipsis}.row>select.grow{min-width:0;flex:1
   <button class="navb adv" data-act="nav" data-v="dashboard" id="nav-dashboard">لوحة المؤشرات</button>
   <button class="navb smp" data-act="home" id="nav-home">مشروعاتي</button>
   <button class="navb" data-act="records" id="nav-records">السجلات</button>
+  <button class="navb" data-act="blankSheet" id="nav-blank">نموذج فاضي للطباعة</button>
   <div class="sp"></div>
   <span class="smp sm" id="whoami"></span>
   <label class="sm adv">المنتور:</label><select id="mentorSel" data-act="mentor" class="adv"></select>
@@ -205,12 +206,12 @@ function go(v){if(S.view==='session'&&v!=='session'&&S.dirty){saveDraft(true);}S
 function render(){var a=document.getElementById('app'),f=document.getElementById('foot');f.innerHTML='';
   document.body.classList.toggle('simple',S.mode==='simple');var mb=document.getElementById('modeBtn');if(mb)mb.textContent=S.mode==='simple'?'وضع متقدم':'الوضع البسيط';
   var who=document.getElementById('whoami');if(who){var me=S.boot&&S.mentorId?S.boot.mentors.filter(function(m){return m.MentorID===S.mentorId})[0]:null;who.innerHTML=me?'👤 '+esc(me.MentorName)+' <a href="#" data-act="changeMentor" style="color:#fff">(تغيير)</a>':'';}
-  var nr=document.getElementById('nav-records');if(nr)nr.classList.toggle('on',S.view==='records');var nh=document.getElementById('nav-home');if(nh)nh.classList.toggle('on',S.view==='home');
+  var nr=document.getElementById('nav-records');if(nr)nr.classList.toggle('on',S.view==='records');var nh=document.getElementById('nav-home');if(nh)nh.classList.toggle('on',S.view==='home');var nb=document.getElementById('nav-blank');if(nb)nb.classList.toggle('on',S.view==='plan'&&!!(S.plan&&S.plan.blank));
   if(S.view==='records'){a.innerHTML=vRecords();f.innerHTML=vRecBar();return;}
   if(S.view==='home'){a.innerHTML=vHome();return;}if(S.view==='ss'){if(S.ssErr&&S.ssLocal){S.ssErr=ssChecks();if(!S.ssErr.length)S.ssErr=null;}a.innerHTML=vSS();f.innerHTML=vSSBar();markErrs();return;}
   if(S.view==='projects')a.innerHTML=vProjects();else if(S.view==='journey')a.innerHTML=vJourney();else if(S.view==='session'){a.innerHTML=vSession();f.innerHTML=vFoot();}
   else if(S.view==='plan')a.innerHTML=vPlan();else if(S.view==='dashboard')a.innerHTML=vDash();
-  if(S.view==='plan'&&S.plan){var fr=document.getElementById('planFrame');if(fr)fr.srcdoc=(S.mode==='simple'||S.plan.mode==='a4'||S.plan.fromRecords)&&S.plan.a4?S.plan.a4:S.plan.html;}}
+  if(S.view==='plan'&&S.plan){var fr=document.getElementById('planFrame');if(fr)fr.srcdoc=(S.mode==='simple'||S.plan.mode==='a4'||S.plan.fromRecords||S.plan.blank)&&S.plan.a4?S.plan.a4:S.plan.html;}}
 
 /* ============================================================ projects */
 function loadProjects(){run(call('listProjects',{includeTest:S.includeTest}),'تحميل المشروعات…').then(function(p){S.projects=p;render();if(S.needPick){S.needPick=false;pickMentorModal();}});}
@@ -588,7 +589,7 @@ function st10(){var e=clientChecks(),w=clientWarnings();return '<div class="card
 /* ============================================================ plan */
 function openPlan(sid){Promise.all([call('planHtml',sid),call('planText',sid),call('plan',sid)]).then(function(r){S.plan={sid:sid,html:r[0],text:r[1],data:r[2]};S.view='plan';render();window.scrollTo(0,0);}).catch(showErr);}
 function vPlan(){var p=S.plan;if(!p)return '';
-  if(S.mode==='simple'||p.fromRecords)return '<div class="row noprint">'+(p.fromRecords?'<button class="btn ghost" data-act="recBack">→ السجلات</button>':'<button class="btn ghost" data-act="home">→ مشروعاتي</button>')+'<span class="grow"></span><button class="btn" data-act="printPlan">🖨 طباعة'+(p.multi?' ('+p.multi+' جلسات)':' ورقة الجلسة')+'</button>'+(p.multi?'':(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">حفظ PDF في Drive</button>')+'<button class="btn sec" data-act="copyPlan">نسخ نص لواتساب</button>')+'</div><iframe class="plan" id="planFrame" title="ورقة الجلسة" style="height:80vh"></iframe>';var phone=(S.journey&&S.journey.project.Phone||'').replace(/\D/g,'');if(phone.indexOf('0')===0)phone='2'+phone;
+  if(S.mode==='simple'||p.fromRecords||p.blank)return '<div class="row noprint">'+(p.blank?'<button class="btn ghost" data-act="planBack">→ رجوع</button>':p.fromRecords?'<button class="btn ghost" data-act="recBack">→ السجلات</button>':'<button class="btn ghost" data-act="home">→ مشروعاتي</button>')+'<span class="grow"></span><button class="btn" data-act="printPlan">🖨 طباعة'+(p.blank?' النموذج الفاضي':p.multi?' ('+p.multi+' جلسات)':' ورقة الجلسة')+'</button>'+((p.multi||p.blank)?'':(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">حفظ PDF في Drive</button>')+'<button class="btn sec" data-act="copyPlan">نسخ نص لواتساب</button>')+'</div><iframe class="plan" id="planFrame" title="ورقة الجلسة" style="height:80vh"></iframe>';var phone=(S.journey&&S.journey.project.Phone||'').replace(/\D/g,'');if(phone.indexOf('0')===0)phone='2'+phone;
   var a4=p.mode==='a4';
   return '<div class="row noprint"><button class="btn ghost" data-act="backToJourney">→ رحلة المشروع</button><span class="chip'+(a4?'':' on')+'" data-act="planMode" data-v="plan">الخطة الكاملة</span><span class="chip'+(a4?' on':'')+'" data-act="planMode" data-v="a4">📄 ملخص الجلسة (ورقة A4)</span><span class="grow"></span><button class="btn sec" data-act="printPlan">🖨 طباعة / حفظ PDF من المتصفح</button>'+(window.DEMO_MODE?'':'<button class="btn sec" data-act="pdfPlan">📄 حفظ PDF في Drive</button>')+
   '<button class="btn sec" data-act="copyPlan">📋 نسخ نص الخطة</button><a class="btn" style="text-decoration:none" target="_blank" href="https://wa.me/'+(phone||'')+'?text='+encodeURIComponent(p.text)+'">واتساب</a></div><iframe class="plan" id="planFrame" title="الخطة الأسبوعية"></iframe>';}
@@ -637,6 +638,61 @@ function ssStart(pid,draftId){var p=draftId?call('getDraft',draftId):call('start
   run(p,'تحضير الجلسة…').then(function(ctx){S.ctx=ctx;S.d=upgradeDraft(ctx.draft||newDraft(ctx),ctx);S.d.mode='simple';S.view='ss';S.dirty=false;S.openCards={};S.ssErr=null;render();window.scrollTo(0,0);});}
 function openSheet(sid,fromRec){run(call('sessionSheetHtml',sid),'تجهيز ورقة الجلسة…').then(function(h){S.plan={sid:sid,a4:h,mode:'a4',fromRecords:!!fromRec};S.view='plan';render();window.scrollTo(0,0)});}
 
+
+/* ============================================================ BLANK TEMPLATE: the session sheet with no data, filled in by hand */
+function blankSheetHtml(){var L=S.L||{},K=(S.boot&&S.boot.constants)||{};
+  var cb='<span class="cb"></span>',opt=function(a){return a.map(function(x){return '<span class="opt">'+cb+esc(x)+'</span>'}).join('')};
+  var ln=function(n){var o='';for(var i=0;i<(n||1);i++)o+='<div class="ln"></div>';return o};
+  var fl=function(lbl){return '<div class="fl"><b>'+lbl+'</b><div class="ln"></div></div>'};
+  var date='<span class="dt">____ / ____ / ________</span>';
+  var rows=function(cols,n){var o='';for(var i=0;i<n;i++)o+='<tr>'+cols.map(function(c,j){return '<td>'+(j===0?'<span class="num">'+(i+1)+'.</span>':'')+(c||'')+'</td>'}).join('')+'</tr>';return o};
+  var days=function(k){return '<span class="days">'+new Array(k+1).join('<span class="cb"></span>')+'</span>'};
+  var h='<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ورقة الجلسة — نموذج فاضي</title><style>'+
+  '@page{size:A4;margin:12mm 12mm}*{box-sizing:border-box}html,body{margin:0;background:#fff}'+
+  'body{font-family:"Noto Sans Arabic","Noto Naskh Arabic","Segoe UI",Tahoma,Arial,sans-serif;color:#26343a;font-size:11pt;line-height:1.5}'+
+  '.page{max-width:186mm;margin:0 auto;padding:5mm 0}h1{font-size:17pt;margin:0 0 4px;color:#1f5f68}'+
+  'h2{font-size:12.5pt;color:#1f5f68;margin:14px 0 5px;padding-bottom:2px;border-bottom:1.5px solid #c9d8db;break-after:avoid;page-break-after:avoid}'+
+  '.hint{color:#7a878b;font-size:9.5pt;margin:-2px 0 4px}'+
+  '.ln{border-bottom:1px dotted #8f9da1;height:8.5mm}.fl{display:flex;gap:6px;align-items:flex-end;margin:2px 0}.fl b{white-space:nowrap;font-weight:600}.fl .ln{flex:1;min-width:20mm}'+
+  '.frow{display:flex;gap:14px;flex-wrap:wrap}.frow>.fl{flex:1;min-width:55mm}.dt{white-space:nowrap;color:#7a878b;letter-spacing:1px;direction:ltr;unicode-bidi:isolate}'+
+  '.meta{border:1px solid #dbe4e6;border-radius:6px;padding:4px 10px 8px}.num{color:#9aa7ab;margin-inline-end:4px}'+
+  '.cb{display:inline-block;width:.9em;height:.9em;border:1.4px solid #6f7e83;border-radius:2px;margin-inline-end:.35em;vertical-align:-.1em}'+
+  '.opt{white-space:nowrap;margin-inline-end:12px;display:inline-block}.days{white-space:nowrap}.days .cb{margin-inline-end:4px}'+
+  'table.t{width:100%;border-collapse:collapse;font-size:.92em;margin:3px 0}table.t td,table.t th{border:1px solid #c9d4d7;padding:3px 5px;text-align:right;vertical-align:top}'+
+  'table.t th{background:#f3f6f7;font-weight:600}table.t td{height:9.5mm}table.cl td{height:auto;padding:4px 5px}table.cl td.c{text-align:center;width:13mm}'+
+  'tr{break-inside:avoid;page-break-inside:avoid}'+
+  '.box{border:1px solid #c9d4d7;border-radius:6px;padding:4px 10px 8px;margin:8px 0;break-inside:avoid;page-break-inside:avoid}.box h3{font-size:11.5pt;margin:2px 0;color:#1f5f68}'+
+  'ol.st{list-style:none;margin:2px 0;padding:0}ol.st li{display:flex;gap:6px;align-items:flex-end}ol.st li .ln{flex:1;height:8mm}ol.st li span{white-space:nowrap}'+
+  '.sig{display:flex;gap:30px;margin-top:18px}.sig .fl{flex:1}'+
+  '@media print{.page{padding:0}}</style></head><body><div class="page">';
+  h+='<h1>ورقة الجلسة</h1><div class="meta"><div class="frow">'+fl('صاحب المشروع:')+fl('النشاط:')+'</div><div class="frow">'+fl('المنتور:')+fl('القرية / المكان:')+'</div>'+
+    '<div class="frow" style="margin-top:8px;gap:22px"><span><b>الجلسة رقم:</b> <span class="dt">______</span></span><span><b>تاريخ الجلسة:</b> '+date+'</span><span><b>الجلسة الجاية:</b> '+date+'</span></div>'+
+    '<div style="margin-top:6px"><b>بعد يوم التدريب:</b> '+opt(['الأول','التاني','التالت','الرابع','مش بعد تدريب'])+'</div></div>';
+  h+='<h2>1. مهام الجلسة اللي فاتت</h2><div class="hint">لكل مهمة: اتعملت ولا لأ، وهنعمل فيها إيه.</div><table class="t"><tr><th style="width:36%">المهمة</th><th style="width:25%">اتعملت؟</th><th style="width:20%">القرار</th><th>ملاحظة</th></tr>'+
+    rows(['',opt(['أيوه','جزء','لأ']),opt(['تتقفل','تكمل']),''],6)+'</table>';
+  h+='<h2>2. الروتينات اللي فاتت</h2><div class="hint">علّم الأيام اللي اتعمل فيها الروتين، وهل شفت دليل (دفتر / صورة / ورقة).</div><table class="t"><tr><th style="width:34%">الروتين</th><th style="width:21%">الأيام</th><th style="width:16%">شفت دليل؟</th><th>القرار</th></tr>'+
+    rows(['',days(7),opt(['أيوه','لأ']),opt(['يكمل','يتعدل','يقف'])],4)+'</table>';
+  h+='<h2>3. الأرقام</h2><table class="t"><tr><th style="width:40%">الرقم</th><th style="width:20%">الجلسة اللي فاتت</th><th style="width:20%">النهارده</th><th>ملاحظة</th></tr>'+rows(['','','',''],5)+'</table>'+fl('نتيجة الشغل في الفترة اللي فاتت:')+ln(1);
+  var n=3;
+  if(L.checklist&&L.checklist.length){var vals=(K.checklistValues&&K.checklistValues.length?K.checklistValues:['بيعملها','ساعات','لأ','مش بيخصه']);
+    h+='<h2>'+(++n)+'. تشيك ليست الروتينات</h2><div style="margin-bottom:4px"><b>نوع المشروع:</b> '+opt(K.modes||[])+'</div><div class="hint">علامة واحدة في كل سطر.</div>';
+    var doms=[];L.checklist.forEach(function(it){if(doms.indexOf(it.Domain)<0)doms.push(it.Domain)});
+    h+='<table class="t cl"><tr><th>الروتين</th>'+vals.map(function(v){return '<th style="text-align:center">'+esc(v)+'</th>'}).join('')+'<th style="width:24%">ملاحظة / الدليل</th></tr>';
+    doms.forEach(function(dm){h+='<tr><th colspan="'+(vals.length+2)+'" style="background:#eef4f3">'+esc(dm)+'</th></tr>'+L.checklist.filter(function(it){return it.Domain===dm}).map(function(it){
+      return '<tr><td>'+esc(it.RoutineText)+'</td>'+vals.map(function(){return '<td class="c"><span class="cb" style="margin:0"></span></td>'}).join('')+'<td></td></tr>'}).join('')});
+    h+='</table><div style="margin-top:4px"><b>الدرجة:</b> <span class="dt">______ من ______</span></div>';}
+  h+='<h2>'+(++n)+'. المشكلة اللي هنشتغل عليها</h2><div class="frow">'+fl('المجال:')+fl('المشكلة:')+'</div>'+fl('ليه بتحصل (السبب):')+fl('هنعمل إيه (الطريقة):');
+  h+='<h2>'+(++n)+'. المهام الجديدة</h2>';
+  for(var i=1;i<=4;i++){h+='<div class="box"><h3>مهمة '+i+'</h3>'+fl('اسم المهمة:')+'<div class="hint" style="margin:4px 0 0">الخطوات:</div><ol class="st">';
+    for(var j=1;j<=5;j++)h+='<li>'+cb+'<span>'+j+'.</span><div class="ln"></div></li>';
+    h+='</ol><div class="frow">'+fl('هتتعمل إمتى وفين:')+fl('الدليل اللي هنشوفه:')+'</div><div style="margin-top:4px"><b>آخر ميعاد:</b> '+date+'</div></div>';}
+  h+='<h2>'+(++n)+'. روتينات جديدة</h2>';
+  for(i=1;i<=2;i++)h+='<div class="box"><h3>روتين '+i+'</h3>'+fl('الروتين:')+'<div style="margin:4px 0"><b>كل قد إيه:</b> '+opt(['كل يوم','كل أسبوع','كل أسبوعين','كل شهر'])+'</div>'+fl('إمتى وفين:')+fl('هنتابعه بإيه:')+
+    '<div style="margin-top:6px"><b>متابعة (علامة كل مرة يتعمل):</b> '+days(14)+'</div></div>';
+  h+='<h2>'+(++n)+'. ملاحظة المنتور</h2>'+ln(3);
+  h+='<h2>'+(++n)+'. الجلسة الجاية</h2><div><b>الميعاد:</b> '+date+'</div>'+fl('هات معاك:')+ln(1);
+  h+='<div class="sig">'+fl('توقيع المنتور:')+fl('توقيع صاحب المشروع:')+'</div>';
+  return h+'</div></body></html>';}
 /* ============================================================ RECORDS: every saved session — search, filter, print one or many */
 function loadRecords(){S.rec=S.rec||{q:'',mentor:'',from:'',to:'',sel:{}};S.view='records';
   run(call('listSessions',{includeTest:S.includeTest}),'تحميل السجلات…').then(function(l){S.rec.list=l;render();window.scrollTo(0,0)});}
@@ -795,8 +851,10 @@ document.addEventListener('click',function(e){var el=e.target.closest('[data-act
   delRoutine:function(){S.d.newRoutines.splice(+el.getAttribute('data-i'),1);S.dirty=true;keepScroll(render)},
   readiness:function(){S.d.readiness=v;S.dirty=true;keepScroll(render)},
   finalize:finalize,discard:function(){if(!confirm('حذف المسودة؟ لن تتأثر أي جلسة محفوظة.'))return;run(call('discardDraft',S.ctx.session.SessionID)).then(function(){S.dirty=false;if(S.mode==='simple'){S.view='home';S.ctx=null;S.d=null;refreshHome();}else openProject(S.ctx.project.ProjectID)})},
-  printPlan:function(){var f=document.getElementById('planFrame'),p=S.plan;printHtml((S.mode==='simple'||p.mode==='a4'||p.fromRecords)&&p.a4?p.a4:p.html,f)},
+  printPlan:function(){var f=document.getElementById('planFrame'),p=S.plan;printHtml((S.mode==='simple'||p.mode==='a4'||p.fromRecords||p.blank)&&p.a4?p.a4:p.html,f)},
   records:function(){if(S.view==='ss'&&S.dirty)saveDraft(true);if(S.view==='session'&&S.dirty)saveDraft(true);S.ctx=null;S.d=null;S.plan=null;S.view='records';['projects','dashboard'].forEach(function(n){var b=document.getElementById('nav-'+n);if(b)b.classList.remove('on')});loadRecords()},
+  blankSheet:function(){if(!S.L){toast('استنى ثانية لحد ما البيانات تحمّل');return;}var back=S.view==='plan'?'home':S.view;if(S.view!=='plan')S.planPrev=S.plan;S.plan={a4:blankSheetHtml(),mode:'a4',blank:true,back:back};S.view='plan';render();window.scrollTo(0,0)},
+  planBack:function(){var b=(S.plan&&S.plan.back)||'home';S.plan=S.planPrev||null;S.planPrev=null;if(b==='records'&&!(S.rec&&S.rec.list)){loadRecords();return;}if((b==='ss'||b==='session')&&!S.ctx)b='home';if(b==='journey'&&!S.journey)b='home';S.view=b;if(b==='projects'){loadProjects();return;}if(b==='dashboard'){loadDash();return;}render();window.scrollTo(0,0)},
   recBack:function(){S.plan=null;S.view='records';render();window.scrollTo(0,0)},
   recOpen:function(){openSheet(v,true)},
   recAll:function(){recFiltered().forEach(function(x){S.rec.sel[x.SessionID]=1});keepScroll(render)},
